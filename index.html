@@ -1,0 +1,3686 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>JHPIEGO - Project Admin</title>
+<meta charset="UTF-8">
+
+<script src="js/jQuery/jquery-1.11.1.min.js"></script>
+<script src="js/jQuery/jquery-ui.min.js"></script>
+<script src="js/jQuery/jquery.dateFormat-1.0.js"></script>
+<script src="js/jQuery/jquery.ui.datepicker.js"></script>
+<script src="js/jQuery/jquery.blockUI.js"></script>
+<script src="js/jQuery/jquery-ui-tabs.js"></script>
+<script src="js/jQuery/jquery.tablesorter.js"></script>
+
+<script src="js/app/util.js"></script>
+<script src="js/app/RESTUtil.js"></script>
+
+<link rel="stylesheet" href="css/jQuery/tablesorter.theme.default.css" />
+<link rel="stylesheet" href="css/jQuery/jquery-ui.css" />
+<link rel="stylesheet" href="css/app/style.css">
+
+
+<!-- URL addresses (Dhis site, home, api) -->
+<script>
+
+	// ------------------------------------
+	// -- App Manifest Json (Get this via Synch, so that it is defined ahead)
+	var _appManifest = $.parseJSON( RESTUtil.getSynchData( 'manifest.webapp' ) );
+	// -- URLs
+	var _appURL = _appManifest.activities.dhis.href.replace( '/dhis-web-maintenance-appmanager', '' ) + '/';
+
+	var _dhisSiteURL = _appURL;
+
+	var _dhisHomeURL = _dhisSiteURL + 'dhis-web-dashboard/index.html';
+
+	var _queryURL_api = _dhisSiteURL + 'api/';
+
+	var _queryURL_me = _queryURL_api + "me";
+
+	var _queryURL_systemInfo = _queryURL_api + "system/info"
+
+	var _queryURL_appTitle = _queryURL_api + 'systemSettings?key=applicationTitle';
+
+	var _queryURL_OrgUnit = _queryURL_api + "organisationUnits";
+
+</script>
+
+<script src="js/DHIS/oust_v1.js"></script>
+<script src="js/app/orgunit.js"></script>
+
+<!-- Main App Coding -->
+<script>
+
+	// Global variables/objects
+	var _mainApp;
+
+	var _minCheckVersion = 0.36;
+
+	var _category_programId = 'OTVpMGDsgGn';
+	var _attributeId_Notes = 'QLnsMT3tvaO';
+	var _attributeId_JPI = 'dDuwpIhuitF';
+	var _attributeId_MCSP = 'ppvDJ5KeuzN';
+	var _attributeId_OrgUnitAssociation = 'EdzAi5P3rPU';
+	
+	var _attributeId_JPI_JsonQuarterly = 'FXpn31gdqC2';
+	var _attributeId_MCSP_JsonQuarterly = 'cSaqk7Xxm51';
+	var _attributeId_JPI_JsonAnnually = 'lJpNnmA3cun';
+	var _attributeId_MCSP_JsonAnnually = 'oNiSb38QlFd';
+	
+	var _attributeId_Award_StartDate = 'zyCMLBrTusj';
+	var _attributeId_Award_EndDate = 'nMIG1x0g8R6';
+
+	var _userGroupId_JHPIEGOAdmin = 'qH5PLntvvhy';
+
+	var _userGroupId_JPI_All = 'VpIRkuWlK1T';
+	var _userGroupId_MCSP_All = 'EEpVee926d7';
+
+	var _catOptionGroupSet_Program = 'R3YjcSrPVe2';
+	var _catOptionGroupSet_Awards = 'ycfmxtA5weF';
+
+	var _userRole_AwardProgramAdmin = 'YRxGnaJcXoa';
+	var _userRole_SuperUser = 'lbGjcvnW56Z';
+	var _userRole_MNEBackstop = 'LKshlQSax95';
+
+	var _queryURL_CatProgram = _queryURL_api + 'categories/' + _category_programId;
+
+
+	// Should build more in OOP way
+	// - Each sub section data handling and related methods should go into a class.
+	//	and as a seperate file.
+
+	// =========================================================
+	// On Page Load Run
+
+	$( document ).ready( function() 
+	{
+		_preLoadProcessManager = new PreLoadProcessManager( function( json_AwardData, hasUserRole_Award, hasUserRole_SuperUser )
+		{
+			_mainApp = new MainApp( json_AwardData, hasUserRole_Award, hasUserRole_SuperUser );
+		});
+	});
+
+
+	// =========================================================
+	//  Classes
+
+
+	function PreLoadProcessManager( executeFunc )
+	{
+		var me = this;
+		
+		me.executeFunc = executeFunc;
+
+		me.currentVersionTag = $( '#currentVersion' );
+
+		me.status_catOptionSet_Award = false;
+		me.status_userRole_Award = false;
+
+		me.catOptionSet_AwardData;
+		me.hasUserRole_Award = false;
+		me.hasUserRole_SuperUser = false;
+
+		// -----------------------------------------------
+
+		me.checkAndRun_AllProcessFinished = function()
+		{
+			if ( me.status_catOptionSet_Award && me.status_userRole_Award )
+			{
+				MsgManager.appUnblock();
+				me.executeFunc( me.catOptionSet_AwardData, me.hasUserRole_Award , me.hasUserRole_SuperUser );
+			}
+		};
+
+		me.preLoadProcess = function()
+		{
+			// Start the form hiding
+			MsgManager.appBlock( "Preload Step Processing" );
+
+
+			AppUtil.checkUserRole( _userRole_AwardProgramAdmin , function( hasRole_Award )
+			{
+				// Since 'checkUserRole' saves the userRoles, this would not take time..
+				AppUtil.checkUserRole( _userRole_SuperUser, function( hasRole_SuperUser ) { me.hasUserRole_SuperUser = hasRole_SuperUser; });
+				AppUtil.checkUserRole( _userRole_MNEBackstop, function( hasRole_MNEBackstop ) 
+				{ 
+					$( '#userInfo_role_MNEBackstop' ).text( ( hasRole_MNEBackstop ) ? 'Y' : 'N' );
+				});
+
+				$( '#userInfo_role_ProgramAdmin' ).text( ( hasRole_Award ) ? 'Y' : 'N' );
+				
+
+				AppUtil.retrieveUserInfo( function( userData )
+				{
+					$( '#userInfo_currentUser' ).text( userData.name );
+				});
+
+
+				me.hasUserRole_Award = hasRole_Award;
+				//me.hasUserRole_Award = true;
+
+				me.status_userRole_Award = true;
+
+				me.checkAndRun_AllProcessFinished();
+			});
+
+			me.retrieveCatOptionSet_Award( function( json_Data ) 
+			{
+				// Order the Awards CatOptionGroups in Decending Order.
+				json_Data.categoryOptionGroups = Util.sortByKey( json_Data.categoryOptionGroups, "code", true, "Decending");
+
+				me.catOptionSet_AwardData = json_Data;
+				
+				me.status_catOptionSet_Award = true;
+
+				me.checkAndRun_AllProcessFinished();
+			});
+
+			
+			me.versionCheck( _minCheckVersion );
+		};
+
+
+		// -----------------------------------------------
+
+		me.versionCheck = function( minCheckVersion ) 
+		{
+			var currentVersion = Number( me.currentVersionTag.text() );
+
+			if ( currentVersion < minCheckVersion )
+			{
+				var message = 'This app is not the latest version, v ' + _minCheckVersion + '.  Please refresh the browser to get the latest version.';
+
+				alert( message ); 
+
+				MsgManager.msgAreaShow( message );
+			}	
+		}
+
+		me.retrieveCatOptionSet_Award = function( returnFunc, loadingTag )
+		{
+			var queryUrl = _queryURL_api + 'categoryOptionGroupSets/' + _catOptionGroupSet_Awards + '.json?fields=categoryOptionGroups[id,name,shortName,code]';
+
+			//RESTUtil.retrieveManager.retrieveData( requestQuery, runFunc, failFunc, loadingStart, loadingEnd )
+			RESTUtil.retrieveManager.retrieveData( queryUrl
+			, function( json_Data ) 
+			{  
+				if ( returnFunc !== undefined ) returnFunc( json_Data );  // json_Data.categoryOptionGroups
+			}
+			, function() 
+			{ 
+				alert( 'Failed to get Award catOptionGroupSets.' ); 
+			} // fail
+			, function() 
+			{ 
+				if ( loadingTag !== undefined ) loadingTag.show(); 
+			} // loadingStart
+			, function() 
+			{
+				if ( loadingTag !== undefined ) loadingTag.hide(); 		
+			} // loadingEnd
+			);
+
+		}
+
+
+		// -----------------------------------------------
+
+		me.initialSetup = function()
+		{
+			MsgManager.initialSetup();
+
+			me.preLoadProcess();
+		};
+
+
+		// Initial Setup Call
+		me.initialSetup( );
+	}
+						
+
+	function MainApp( json_AwardData, hasUserRole_Award, hasUserRole_SuperUser )
+	{
+		var me = this;
+
+		me.json_AwardData = json_AwardData;
+		me.hasUserRole_Award = hasUserRole_Award;
+		me.hasUserRole_SuperUser = hasUserRole_SuperUser;
+
+		me.divMainTag = $( '#divMain' );
+
+		me.searchTextBoxTag = $( '#searchTextBox');
+		me.searchResultTag = $( '#searchResult' );
+
+		me.listingTableTag = $( '#listingTable' );
+		me.divListingTableTag = $( '#divListingTable' );
+		me.divListLoadingTag = $( '#divListLoading' );
+
+		me.cbShowActiveOnlyTag = $( '#cbShowActiveOnly' );
+
+		me.massFixBtnTag = $( '#massFixBtn' );
+		me.massFixCountDivTag = $( '#massFixCountDiv' );
+		me.massFixCountTag = $( '#massFixCount' );
+		me.massFixCount_TotalTag = $( '#massFixCount_Total' );
+
+		me.queryURL_CatProgram_Retrieve = _queryURL_CatProgram + '.json?paging=false&fields=id,name,categoryOptions[id,name,shortName,organisationUnits[level,name],publicAccess,startDate,endDate,attributeValues[value,attribute[id]],userGroupAccesses[access,id,displayName,userGroupUid],categoryOptionGroups[id,name,categoryOptions[id],categoryOptionGroupSet[id]]]';
+
+		me.catOptionPopupForm;
+		me.awardPopupForm;
+
+		me.catOptionList_Retrieved;
+
+
+		// ========================================================
+		// == Initial Setup Related (Run at 'New') ======
+		me.initialSetup = function()
+		{	
+			me.setupTopSection();
+
+			me.initializeObjects();
+
+			me.setUpEvents();
+
+			// Run 1st on Start
+			me.populateListTable( me.listingTableTag, me.divListingTableTag, me.divListLoadingTag, me.hasUserRole_SuperUser );
+		}
+
+		me.initializeObjects = function()
+		{
+			me.catOptionPopupForm = new CatOptionPopupForm( me, me.updateListTable, me.json_AwardData, me.hasUserRole_Award );
+			me.awardPopupForm = new AwardPopupForm( me );
+		}
+
+
+		// ----------------------------------------
+		// -- Events Related ----
+
+		me.setUpEvents = function()
+		{
+			me.setAddNew();
+
+			me.setup_searchEvent( me.searchTextBoxTag );
+
+			me.setUpOtherEvents();
+		}
+
+
+		me.filterRowByShowActive = function( cbShowActiveOnlyTag, listingTableTag )
+		{
+			// filter 
+			if ( cbShowActiveOnlyTag.is( ':checked' ) ) 
+			{
+				listingTableTag.find( 'tr[status="Active"]' ).attr( 'showpass', 'Y' );
+				listingTableTag.find( 'tr[status="Inactive"]' ).attr( 'showpass', 'N' );
+			}
+			else
+			{
+				listingTableTag.find( 'tr[status]' ).attr( 'showpass', 'Y' );
+			}
+
+			listingTableTag.find( 'tr[status]' ).hide();
+
+			listingTableTag.find( 'tr[showpass=Y][searchkey=Y]' ).show();
+		}
+
+
+		me.setUpOtherEvents = function()
+		{
+			me.cbShowActiveOnlyTag.click( function()
+			{
+				//me.updateListTable();
+				me.filterRowByShowActive( me.cbShowActiveOnlyTag, me.listingTableTag );
+			});
+
+
+			me.massFixBtnTag.click( function()
+			{
+				if ( me.catOptionList_Retrieved !== undefined )
+				{
+					if ( confirm( "Are you sure you want to perform Mass Fix?" ) )
+					{
+						me.performMassFix( me.catOptionList_Retrieved );
+					}
+				}
+				else
+				{
+					alert( 'Category Option List is not available.  Please "Run" the list and try again.' );
+				}
+			});
+
+		}
+
+
+		// ----------------------------------------
+		// -- Main Retrieval and Search ----
+
+		me.populateListTable = function( listingTableTag, divListingTableTag, divListLoadingTag, hasUserRole_SuperUser )
+		{
+			var currentDateTime = new Date();
+			var today = new Date( currentDateTime.getUTCFullYear(), currentDateTime.getUTCMonth(), currentDateTime.getUTCDate() );
+
+
+			// Reset
+			me.clearSearchRelated();
+			me.cbShowActiveOnlyTag.prop('checked', false);
+			$.tablesorter.destroy( listingTableTag, false, function() {} );	
+			me.massFixBtnTag.hide();
+			
+
+			AppUtil.retrieveUserInfo( function( json_UserInfo )
+			{
+				RESTUtil.getAsynchData( me.queryURL_CatProgram_Retrieve, function( json_data )
+				{
+					me.massFixBtnTag.show();
+
+					me.trim_CatOptionNames( json_data.categoryOptions );
+
+					var catOptionSorted = Util.sortByKey( json_data.categoryOptions, "name" );
+
+
+					me.catOptionList_Retrieved = catOptionSorted;
+
+
+					$.each( catOptionSorted, function( i_co, item_co )
+					{					
+						if ( me.checkUserAccess( item_co, hasUserRole_SuperUser, json_UserInfo ) )
+						{
+							var status = "Inactive";
+
+							var startDate = ( item_co.startDate !== undefined ) ? Util.getDate_FromYYYYMMDD( item_co.startDate.substring( 0, 10 ) ) : "";
+							var endDate = ( item_co.endDate !== undefined ) ? Util.getDate_FromYYYYMMDD( item_co.endDate.substring( 0, 10 ) ) : "";
+
+							if ( startDate != "" && endDate != "" )
+							{
+								if ( startDate <= today && endDate >= today )
+								{
+									status = "Active"; 
+								}
+							}
+
+							var startDateFormated = ( startDate != "" ) ? $.format.date( startDate, "dd MMM yyyy" ) : "";
+							var endDateFormated = ( endDate != "" ) ? $.format.date( endDate, "dd MMM yyyy" ) : "";
+
+
+							var trTag = $( '<tr coid="' + item_co.id + '" status="' + status + '" showpass="Y" searchkey="Y">'
+								+ '<td width="35%"><div class="popupSelect">' + item_co.name + '</div></td>'
+								+ '<td width="60px" nowrap><span class="countryOu divInline" style="display: none;"></span><span class="otherCountries smallInfoIcon" style="display: none;">i</span></td>'
+								+ '<td align="center" nowrap><span title="' + startDate + '">' + startDateFormated + '</span></td>'
+								+ '<td align="center" nowrap><span title="' + endDate + '">' + endDateFormated + '</span></td>'
+								+ '<td align="center" nowrap>' + status + '</td>'
+								+ '<td align="center"><img src="img/statusFail.png" alt="" title="" class="status_JsonDataMissing" /></td>'
+								+ '<td align="center"><img src="img/statusFail.png" alt="" title="" class="status_OrgUnitLinked" /></td>'
+
+								+ '<td align="left" width="25%"><img src="img/statusFail.png" alt="" title="" class="status_Award" /> <span class="awardName" style="font-size: 11px; color: DarkGreen;"></span></td>'
+								+ '<td align="center"><img src="img/statusFail.png" alt="" title="" class="status_SharingSetting" /></td>'
+
+								+ '</tr>' );
+
+
+							trTag.find( 'div.popupSelect' ).click( function()
+							{
+								me.catOptionPopupForm.openForm( item_co.id );
+							});
+
+							me.setOrgUnitCountryInfo( item_co, trTag.find( '.countryOu' ), trTag.find( '.otherCountries' ) );
+
+
+							var accessInfo = AppUtil.getAccessInfoFromCatOption( item_co );
+							var statusInfo = AppUtil.getStatusInfo( item_co, accessInfo.accessData, me.json_AwardData );
+							// On 'statusInfo', add the attribute related info!!
+
+
+							item_co.needFix = AppUtil.populateStatus( trTag, statusInfo, true );
+
+
+							// add rows
+							listingTableTag.find( 'tbody' ).append( trTag );
+						}
+
+					});
+
+					// Perform Table Sorter.
+					//listingTableTag.tablesorter( { sortList: [ [2,1] ] } );
+					listingTableTag.tablesorter( { sortList: [ [1,0], [0,0] ] } );
+
+				}
+				, function() 
+				{
+					alert( 'Failed to load the categoryOption list for the category' );
+				}
+				, function() 
+				{
+					divListLoadingTag.show();
+				}
+				, function() 
+				{ 
+					divListLoadingTag.hide();
+					divListingTableTag.show( 'fast' ); 
+				});
+			});
+		}
+
+
+		me.runSearch = function( searchTag, listingTableTag )
+		{
+			var trRows = listingTableTag.find( 'tbody tr[coid]' );
+			trRows.attr( 'searchkey', 'Y' );
+			
+			//var trRows = trRowsAll.filter( 'tr[showpass=Y]' );
+
+			var searchKeyword = searchTag.val();
+
+			// Show all the rows regardless of keyword search.
+			trRows.filter( 'tr[showpass=Y]' ).show();
+
+
+			if ( searchKeyword.length > 0 )
+			{
+				var matchedRows = trRows.find( 'div.popupSelect' ).filter( function()
+				{
+					return $( this ).text().match( new RegExp( searchKeyword, "ig" ) );
+				});
+
+
+				// Set to hide all, first
+				trRows.hide();
+				trRows.attr( 'searchkey', 'N' );
+
+				
+				// Show the ones the matched
+				matchedRows.each( function( i )
+				{
+					$( this ).closest( 'tr[coid]' ).attr( 'searchkey', 'Y' );
+				});
+
+
+				var finalShows = trRows.filter( 'tr[showpass=Y][searchkey=Y]' ).show();
+
+
+				Util.paintLightGreen( searchTag );
+
+				// Message Found Count here....
+				me.searchResultTag.text( finalShows.length );
+
+			}
+			else
+			{
+				me.searchResultTag.text( '' );
+			}
+
+		};
+
+
+		// ---------------------------------------------------------------
+
+		// ========================================================
+		// == Set up Methods ================
+
+		me.setupTopSection = function()
+		{
+			// Set click event - back to application
+			$( '#headerBanner,#headerText,#closeButton' ).click( function() { window.location.href = _dhisHomeURL; } );
+
+			// Get application title
+			$.get( _queryURL_appTitle, function( json_Data )
+			{
+				$( '#headerText' ).text( Util.getNotEmpty( json_Data.applicationTitle ) );
+			});
+		}
+
+		me.setAddNew = function()
+		{
+			if ( me.hasUserRole_Award )
+			{
+				$( '#divAddNewCatOption' ).show();
+
+				$( '#btnAddNewCatOption' ).click( function()
+				{
+					me.catOptionPopupForm.openForm();
+				});
+			}
+
+			$( '#btnAddAward' ).click( function()
+			{
+				//console.log( 'btnAddAward clicked' );				
+				//$( '#hiddenLinkAddAward' )[0].click();
+
+				me.awardPopupForm.openForm();
+
+				//window.location.href = _dhisHomeURL;
+				//window.location.href = '../../dhis-web-maintenance/#/edit/dataElementSection/categoryOptionGroup/add';
+			});
+		}
+
+
+		me.setup_searchEvent = function( searchTag, callBackFunc )
+		{
+			searchTag.keyup( function()
+			{			
+				Util.paintClear( searchTag );
+
+				me.typewatch( function()
+				{
+					me.runSearch( searchTag, me.listingTableTag );
+
+				}, 700 );
+			});
+		};
+
+
+		// --------------------------------------
+		// --- Other Methods -------------
+
+		me.MsgManager_showMainUpdateCount = function( progressCount, totalCount )
+		{
+			var msg = "Processing - " + progressCount + " out of " + totalCount;
+
+			me.divMainTag.block( { 
+				message: msg
+				, fadeIn: 0
+				, fadeOut: 0
+				, timeout: 0
+				, centerY: false
+				//, showOverlay: false
+				, css: {
+					backgroundColor: '#999'
+					,'-webkit-border-radius': '10px'
+					,'-moz-border-radius': '10px'
+					,opacity: .7
+					,color: '#fff'
+					,width: '200px'
+					,top: '100px'
+					,left: ''
+					,border: 'none'
+					,padding: '5px'
+				} 
+			} );
+		}
+
+		me.trim_CatOptionNames = function( catOptions )
+		{
+			$.each( catOptions, function( i_co, item_co )
+			{
+				item_co.name = Util.trim( item_co.name );
+			});
+		}
+
+		me.checkUserAccess = function( catOptionData, hasUserRole_SuperUser, json_UserInfo )
+		{
+			var hasAccess = false;
+
+			if ( hasUserRole_SuperUser )
+			{
+				hasAccess = true;
+			}
+			else if ( AppUtil.checkAccessR( catOptionData.publicAccess ) )
+			{
+				hasAccess = true;
+			}
+			else
+			{
+				var userGroups = json_UserInfo.userGroups;
+
+				if ( userGroups !== undefined && userGroups.length > 0 )
+				{
+					$.each( userGroups, function( i_ug, item_ug )
+					{
+						$.each( catOptionData.userGroupAccesses, function( i_coug, item_coug )
+						{
+							// TODO:
+							//   1. create method to only get 1st 1 'r' to tell if it has access
+							//   2. update put 'rw' on 3rd & 4th place
+							if ( item_coug.id == item_ug.id && AppUtil.checkAccessR( item_coug.access ) )
+							{
+								hasAccess = true;
+								return false;
+							}
+						});
+
+						if ( hasAccess ) return false;
+					});
+				}							
+			}
+
+			return hasAccess;
+		}
+
+		me.clearListTableData = function( listingTableTag )
+		{
+			listingTableTag.find( 'tr[coid]' ).remove();
+		}
+
+
+		me.updateListTable = function()
+		{
+			me.divListingTableTag.hide( 'fast' );
+			me.clearListTableData( me.listingTableTag );
+
+			me.populateListTable( me.listingTableTag, me.divListingTableTag, me.divListLoadingTag, me.hasUserRole_SuperUser );
+		}
+
+		me.typewatch = function()
+		{
+			var timer = 0;
+			return function( callback, ms )
+			{
+				clearTimeout ( timer );
+				timer = setTimeout( callback, ms );
+			}  
+		}();
+
+
+		me.clearSearchRelated = function()
+		{
+			Util.paintClear( me.searchTextBoxTag.val( '' ) );
+			me.searchResultTag.text( '' );
+		}
+
+
+		me.setOrgUnitCountryInfo = function( catOptionData, mainTag, subTag )
+		{
+			var ouCount = 0;
+			var otherCountriesStr = "";
+
+			mainTag.text( 'zzzz' );  // for ordering..  hidden initially.
+
+
+			if ( catOptionData.organisationUnits !== undefined && catOptionData.organisationUnits.length > 0 )
+			{
+				// look for 1st level 3 orgUnit and put rest of them as comment?
+				$.each( catOptionData.organisationUnits, function( i_ou, item_ou )
+				{
+					if ( item_ou.level == 3 )
+					{
+						if ( ouCount == 0 )
+						{
+							mainTag.text( item_ou.name ).show();
+						}
+						else if ( ouCount > 0 )
+						{
+							if ( ouCount == 1 )
+							{
+								otherCountriesStr = 'Others: ';
+								subTag.show();  // or change css - for opcity
+							}
+							else
+							{
+								otherCountriesStr += '\n';
+							}
+
+							otherCountriesStr += item_ou.name;
+						}
+						
+						ouCount++;
+					}
+				});
+
+				if ( ouCount == 0 )
+				{
+					subTag.attr( 'title', 'OrgUnits exist, but country orgUnit not selected.' ).css( 'background-color', 'Orange' ).show();
+				}
+				else
+				{
+					subTag.attr( 'title', otherCountriesStr );
+				}
+			}
+		}
+
+		// --------------------------------------------------------
+		// --- Mass Fix related
+
+		me.performMassFix = function( catOptionList )
+		{
+			var totalCount = 0;
+			var progressCount = 0;
+
+			//console.log( 'catOptionList: ' + JSON.stringify( catOptionList ) );
+			//me.massFixCountDivTag.show();
+
+			// Set total
+			$.each( catOptionList, function( i_co, item_co )
+			{
+				if ( item_co.needFix !== undefined && item_co.needFix )
+				{
+					totalCount++;
+				}
+			});
+
+			//totalCount = 236;
+			//me.massFixCount_TotalTag.text( totalCount );
+
+			if ( totalCount == 0 )
+			{
+				alert( 'There is no Category Option to be fixed.' );
+			}
+			else
+			{
+
+				me.MsgManager_showMainUpdateCount( progressCount, totalCount );
+
+
+				// Perform the fix.
+				$.each( catOptionList, function( i_co, item_co )
+				{
+					// Fix Only ones with 'needFix' flag set
+					if ( item_co.needFix !== undefined && item_co.needFix )
+					{
+						me.catOptionPopupForm.fixFromOutside( item_co, function( issueData )
+						{
+							progressCount++;
+
+							//me.massFix_CountUpdate();
+							//me.massFixCountTag.text( progressCount );
+
+							me.MsgManager_showMainUpdateCount( progressCount, totalCount );
+
+							if ( progressCount == totalCount )
+							{
+								MsgManager.appUnblock( me.divMainTag );
+
+								alert( 'Mass Fix finished!' );
+
+								// refresh the page
+								me.updateListTable();
+							}
+						});
+					}
+				});
+
+			}
+
+		}
+
+		// ========================================================
+
+		// Initial Setup Call
+		me.initialSetup();
+	}
+
+	// Class 
+	// -------------------------------------------
+
+
+	// -------------------------------------------
+	// Class - View Column Popup Form
+
+	function CatOptionPopupForm( mainListingTableObj, updateListTable, json_AwardData, hasUserRole_Award )
+	{
+		var me = this;
+
+		me.json_AwardData = json_AwardData;
+		me.hasUserRole_Award = hasUserRole_Award;
+
+		me.dialogFormTag = $( "#catOptionPopupForm" );
+		me.catOptionPopupFormInnerTag = $( '#catOptionPopupFormInner' );
+		me.tbCatOptionDetailTag = me.dialogFormTag.find( 'table.tbCatOptionDetail' );
+		me.divAccessFixTag = $( '#divAccessFix' );
+
+		me.btnSaveTag = me.dialogFormTag.find( '.btnSave' );
+		me.btnCancelTag = me.dialogFormTag.find( '.btnCancel' );
+
+		me.duplicateAttrValCaseTag = $( '#duplicateAttrValCase' );
+
+		me.mainListingTableObj = mainListingTableObj;
+		me.updateListTable = updateListTable;
+
+		me.width = me.dialogFormTag.attr( 'formWidth' );
+		me.height = me.dialogFormTag.attr( 'formHeight' );
+
+		me.queryURL_CatOption = _queryURL_api + 'categoryOptions';
+		me.queryURL_Attributes = _queryURL_api + 'attributes.json?paging=false&fields=id,code,name&filter=categoryOptionAttribute:eq:true&fields=id,name,valueType,optionSet[options[id,code,name]]';
+
+		me.catOptionId;
+		me.catOptionData;
+		me.link_userGroup;
+		me.link_catOptionGroup;
+
+		me.orgunitAssociationTree;
+
+		me.accessFixCase = false;
+
+		me.duplicateCheckData = { "checkPerforms": { "name": false, "shortName": false, "code": false }, "foundDuplicates": { "name": false, "shortName": false, "code": false } };
+
+		me.editMode = "New";  // "New" vs "Update"
+
+		me.dateEndingTimeZone = 'T23:59:00.000Z';
+
+
+		// ------------------------------------------------
+
+		// Initial Setup Call
+		me.initialSetup = function()
+		{			
+			me.FormPopupSetup();
+
+			me.setup_Events();
+
+			me.setup_tab();
+
+			me.setup_datePickers();
+
+
+			me.orgunitAssociationTree = new OrgUnit(); // Build Orgunit Tree
+		};
+
+		// ------------------------------------------------------------
+
+
+		me.FormPopupSetup = function()
+		{
+			// Set up the form
+			me.dialogFormTag.dialog({
+			autoOpen: false
+			,title: "Program Details"
+			,width: me.width
+			//,height: me.height				  
+			,modal: true				
+			,close: function( event, ui ) 
+				{
+					$( this ).dialog( "close" );
+				}				
+			});
+		};
+
+
+		me.openForm = function( catOptionId )
+		{
+			// reset memory data and table values
+			me.resetData( me.tbCatOptionDetailTag );
+			me.orgunitAssociationTree.clearTree();
+
+			me.btnSaveTag.show();
+
+			// populate attribute data first.
+			me.retrieveOptionSetAttributes( function( json_Attributes )
+			{
+				me.populateAttributes_TableRows( "JPI", me.tbCatOptionDetailTag, json_Attributes );
+				me.populateAttributes_TablePRG( me.tbCatOptionDetailTag, json_Attributes );		
+
+				// If 'update' case, populate data.
+				if ( catOptionId !== undefined )
+				{
+					me.editMode = "Update";
+
+					me.catOptionId = catOptionId;
+
+					me.retrieveAndPopulate_DetailTable( me.tbCatOptionDetailTag, catOptionId, me.hasUserRole_Award, function( json_catOption )
+					{
+						me.catOptionData = json_catOption;
+
+						me.orgunitAssociationTree.setUpTree( me.catOptionData );
+
+
+						me.getSameNamedLinks( json_catOption, function( json_userGroup, json_catOptionGroup )
+						{
+							me.link_userGroup = json_userGroup;
+							me.link_catOptionGroup = json_catOptionGroup;
+						});
+
+						me.dialogFormTag.dialog( "open" );
+					});
+				}
+				else
+				{
+					me.editMode = "New";
+
+					// reset the tree and set obj
+					me.orgunitAssociationTree.setUpTree();
+
+					// perform needed population.
+					var awardsTag = me.tbCatOptionDetailTag.find( 'select.catOption_Award' );
+					AppUtil.populateSelect( awardsTag, "Award", me.json_AwardData.categoryOptionGroups, { "value": "id", "text": "code" } );
+
+					// resetData empties me.catOptionId
+					me.dialogFormTag.dialog( "open" );
+				}
+
+
+				// If has User Role, enable the fields..
+				if ( me.hasUserRole_Award ) Util.disableTag( me.tbCatOptionDetailTag.find( 'input,select,textarea' ), false );
+
+			});
+
+		}
+		
+
+		// ---------------------------------------
+		// --- Populate Related ------------------
+
+		me.retrieveAndPopulate_DetailTable = function( tableTag, catOptionId, hasUserRole_Award, returnFunc )
+		{
+			var queryUrl = me.queryURL_CatOption + '/' + catOptionId + '.json?fields=*,organisationUnits[id,name,level,ancestors[id,level]],userGroupAccesses[access,id,displayName,userGroupUid],categoryOptionGroups[id,name,categoryOptions[id],categoryOptionGroupSet[id]]';
+			//,attributeValues[value,attribute[id,code,option]]';
+
+			$.get( queryUrl, function( json_Data )
+			{
+				tableTag.find( '.catOption_Name' ).val( Util.trim( json_Data.name ) );
+				tableTag.find( 'input.catOption_ShortName' ).val( Util.trim( json_Data.shortName ) );
+
+				if ( json_Data.startDate !== undefined ) tableTag.find( 'input.catOption_StartDate' ).val( json_Data.startDate.substring( 0, 10 ) );
+				if ( json_Data.endDate !== undefined ) tableTag.find( 'input.catOption_EndDate' ).val( json_Data.endDate.substring( 0, 10 ) );
+				tableTag.find( 'input.catOption_Code' ).val( json_Data.code );
+
+				tableTag.find( 'textarea.catOption_Notes' ).val( AppUtil.getAttributeValue_ById( json_Data.attributeValues, _attributeId_Notes ) );
+				// 'award' as attribute
+
+				// "JPI" and "MCSP" Attributes table row populate and data populate
+				me.populateAttributes_Data( tableTag, json_Data.attributeValues );
+
+
+				// Award listing 
+				var awardsTag = tableTag.find( 'select.catOption_Award' );
+				var awardFullNameTag = tableTag.find( '.awardFullName' );
+
+				var foundAward = AppUtil.getMatchingData( json_Data.categoryOptionGroups, me.json_AwardData.categoryOptionGroups );
+
+				AppUtil.populateSelect( awardsTag, "Award", me.json_AwardData.categoryOptionGroups, { "value": "id", "text": "code" } );
+				if ( foundAward !== undefined ) 
+				{
+					awardsTag.val( foundAward.id );
+					awardFullNameTag.text( foundAward.name ).show();
+				}
+
+
+				// Access, User Group Sharing Populate
+				var accessInfo = AppUtil.getAccessInfoFromCatOption( json_Data );
+
+				me.populateAccessInfo( tableTag, json_Data, accessInfo );
+
+				var statusInfo = AppUtil.getStatusInfo( json_Data, accessInfo.accessData, me.json_AwardData );
+
+				AppUtil.populateStatus( tableTag, statusInfo );
+				
+	
+				// orgUnitTree population moved to return function of this.
+				//me.orgunitAssociationTree.buildTree( json_Data );
+
+
+				var duplicateAttributeVal_Found = me.cleanDuplicateAttributeValue( json_Data );
+
+				( duplicateAttributeVal_Found ) ? me.duplicateAttrValCaseTag.show() : me.duplicateAttrValCaseTag.hide();
+
+				returnFunc( json_Data );
+			});
+		}
+		
+
+		// ---------------------------------------------------
+
+		me.getSameNamedLinks = function( json_catOption, returnFunc )
+		{
+			// Check if it already exists in loaded object - find by name.
+			var json_userGroup = Util.getFromList( json_catOption.userGroupAccesses, json_catOption.name, "displayName" );
+
+			var json_catOptionGroup = Util.getFromList( json_catOption.categoryOptionGroups, json_catOption.name, "name" );
+
+			returnFunc( json_userGroup, json_catOptionGroup );
+		};
+
+
+		me.generateData = function( tableTag, catOptionData )
+		{
+			var json_Data = {};
+
+			if ( catOptionData !== undefined )
+			{
+				json_Data = catOptionData;
+			}
+
+			json_Data.name = Util.trim( tableTag.find( '.catOption_Name' ).val() ).replace(/\s\s+/g, ' ');
+			json_Data.shortName = Util.trim( tableTag.find( 'input.catOption_ShortName' ).val() ).replace(/\s\s+/g, ' ');
+
+			var startDate = Util.trim( tableTag.find( 'input.catOption_StartDate' ).val() ) + me.dateEndingTimeZone;
+			var endDate = Util.trim( tableTag.find( 'input.catOption_EndDate' ).val() ) + me.dateEndingTimeZone;
+			var code = Util.trim( tableTag.find( 'input.catOption_Code' ).val() );
+			var notes = Util.trim( tableTag.find( 'textarea.catOption_Notes' ).val() );
+			
+			if ( startDate != "" ) json_Data.startDate = startDate;
+			if ( endDate != "" ) json_Data.endDate = endDate;
+			if ( code != "" ) json_Data.code = code;
+
+	
+			// OrgUnit associations
+			json_Data.organisationUnits = me.orgunitAssociationTree.getSelectedOUs();
+
+
+			if ( json_Data.attributeValues === undefined ) json_Data.attributeValues = [];
+
+			me.setAttributes_Data( tableTag, json_Data.attributeValues );
+
+			if ( notes != "" ) me.setAttributes( json_Data.attributeValues, _attributeId_Notes, notes );
+
+
+			return json_Data;
+		}
+
+
+		me.setAttributes_Data = function( mainTableTag, attributeValues )
+		{
+			var tableTags = mainTableTag.find( 'table.tbAttributes,table.tbAttributesPRG' );
+			var attrTags = tableTags.find( 'select.attributeVal[attrid], input.attributeVal[attrid]' );
+
+			attrTags.each( function()
+			{
+				var selectTag = $( this );
+
+				var attrId = selectTag.attr( 'attrid' );
+
+				me.setAttributes( attributeValues, attrId, selectTag.val() );
+			});
+		}
+
+
+		me.setAttributes = function( attributeValues, attributeId, attributeVal )
+		{
+			var attributeValObj;
+
+			$.each( attributeValues, function( i_av, item_av )
+			{
+				if ( item_av.attribute.id == attributeId )
+				{
+					attributeValObj = item_av;
+					return false;
+				}
+			});
+
+			if ( attributeValObj !== undefined )
+			{
+				attributeValObj.value = attributeVal;
+			}
+			else
+			{
+				attributeValObj = { "value":attributeVal, "attribute":{ "id":attributeId } };
+
+				attributeValues.push( attributeValObj );
+			}
+		}
+
+
+		me.populateAccessInfo = function( tableTag, json_Data, accessInfo, hasUserRole_Award )		
+		{
+
+			tableTag.find( 'span.accessPublic' ).text( json_Data.publicAccess );
+
+			var accessPublic_StatusTag = tableTag.find( 'img.accessPublic_Status' );
+			var accessUserGroup_RW_StatusTag = tableTag.find( 'img.accessUserGroups_RW_Status' );
+			var accessUserGroup_DataEntry_StatusTag = tableTag.find( 'img.accessUserGroups_DataEntry_Status' );
+			
+			var spanAccessUserGroups_RW = tableTag.find( 'span.accessUserGroups_RW' );
+			var spanaccessUserGroups_DataEntry = tableTag.find( 'span.accessUserGroups_DataEntry' );
+
+			var count_accessRW = 0;
+			var count_accessDataEntry = 0;
+
+
+			$.each( accessInfo.userGroupNames.rw, function( i_rw, item_rw )
+			{
+				var accessChar = ( count_accessRW == 0 ) ? "" : ", ";
+
+				if ( count_accessRW > 20 )
+				{
+					spanAccessUserGroups_RW.append( '<span title="too many userGroups..">...</span>' );
+					
+					return false;
+				}
+				else
+				{
+					spanAccessUserGroups_RW.append( accessChar + '<span>' + item_rw.displayName + '</span>' );
+				}
+
+				count_accessRW++;
+			});
+
+
+			// Only display up to 20? - also, check the deleting..
+			$.each( accessInfo.userGroupNames.dataEntry, function( i_dataEntry, item_dataEntry )
+			{
+				if ( count_accessDataEntry > 0 ) spanaccessUserGroups_DataEntry.append( ", " );
+
+				if ( count_accessDataEntry > 20 )
+				{
+					spanaccessUserGroups_DataEntry.append( '<span title="too many userGroups..">...</span>' );
+					
+					return false;
+				}
+				else
+				{
+					var spanTag = $( '<span>' + item_dataEntry.displayName + '</span>' );
+					spanaccessUserGroups_DataEntry.append( spanTag );
+
+
+					// Get table id
+					AppUtil.getSqlViewData_UserGroupTableId( item_dataEntry.id, function( userGroupId )
+					{
+						var userGroupUrl = _dhisSiteURL + '/dhis-web-maintenance-user/editUserGroupForm.action?userGroupId=' + userGroupId;
+
+						var linkTag = $( '<a href="' + userGroupUrl + '" target="_blank" style="color: #8094AE; text-decoration: underline;">' + spanTag.text() + '</a>' );
+						spanTag.text( '' );
+						spanTag.append( linkTag );
+					});
+				}
+
+				count_accessDataEntry++;
+			});
+
+
+
+			// Status Img Set
+			( accessInfo.accessData.privateAccess ) ? AppUtil.setStatus( accessPublic_StatusTag, "Ok", "Public sharing set to none" ) : AppUtil.setStatus( accessPublic_StatusTag, "Wrong", "Public sharing set to read-only" );
+
+			( accessInfo.accessData.accessRW ) ? AppUtil.setStatus( accessUserGroup_RW_StatusTag, "Ok", "Editable by 'JHPIEGO admin' user group" ) : AppUtil.setStatus( accessUserGroup_RW_StatusTag, "Wrong", "Editable not setup properly."  );
+
+			( accessInfo.accessData.accessDataEntry ) ? AppUtil.setStatus( accessUserGroup_DataEntry_StatusTag, "Ok", "Shared with same named User Group." ) : AppUtil.setStatus( accessUserGroup_DataEntry_StatusTag, "Wrong", "Not shared with same named User Group, yet." );
+
+
+			me.accessFixCase = ( !( accessInfo.accessData.privateAccess && accessInfo.accessData.accessRW && accessInfo.accessData.accessDataEntry ) );
+			// me.divAccessFixTag.show();
+
+		}
+
+
+		me.retrieveOptionSetAttributes = function( returnFunc )
+		{
+			// TODO: later, change this to memory saving listing..
+			$.get( me.queryURL_Attributes, function( json_Data )
+			{
+				returnFunc( json_Data.attributes );
+			});
+		}
+
+
+		me.populateAttributes_TableRows = function( attrType, mainTableTag, json_Attributes )
+		{
+			var attributesSorted = Util.sortByKey( json_Attributes, "name" );
+
+			$.each( attributesSorted, function( i_attr, item_attr )
+			{
+				if ( ( attrType == "JPI" && item_attr.name.substring(0, 6) == "JPI TA" )
+					|| ( attrType == "PRG" && ( item_attr.id == "dDuwpIhuitF" || item_attr.id == "ppvDJ5KeuzN" ) ) ) //  || item_attr.id == "eO1gG8QuGZL"  item_attr.name.substring(0, 4) == "PRG" ) )
+				{
+					me.insertAttributeRow( mainTableTag, attrType, item_attr );
+				}
+			});
+		}
+
+		me.populateAttributes_TablePRG = function( mainTableTag, json_Attributes )
+		{
+			var attrTableTag = mainTableTag.find( 'table.tbAttributesPRG' );
+			var attributeTdTags = attrTableTag.find( 'td[attrid]' ); //.empty();
+
+			attributeTdTags.each( function()
+			{
+				var attributeTdTag = $( this );
+				var attributeId = attributeTdTag.attr( 'attrid' );
+
+				var item_attr = Util.getFromList( json_Attributes, attributeId, "id" );
+
+				attributeTdTag.html( me.getAttributeControlType( item_attr ) );
+			});
+		}
+
+
+		me.insertAttributeRow = function( mainTableTag, attrType, item_attr )
+		{		
+			var attrTableTag = mainTableTag.find( 'table.tbAttributes[attrType="' + attrType + '"]' );
+
+			var trTag = $( '<tr attrid="' + item_attr.id + '"><td class="tbStyleData" width="50%" style="font-weight: bold;">' + item_attr.name + '</td><td class="tbStyleData tdData" width="50%"></td></tr>' );
+
+			var tdDataTag = trTag.find( 'td.tdData' ).append( me.getAttributeControlType( item_attr ) );
+
+			// Add row..
+			attrTableTag.append( trTag );
+		}
+
+
+		me.getAttributeControlType = function( item_attr )
+		{	
+			var attributeControl;
+
+			var valueType = item_attr.valueType;
+
+
+			if( item_attr.optionSet !== undefined )
+			{
+				attributeControl = $( '<select class="attributeVal" attrid="' + item_attr.id + '"><option value=""></option></select>' );
+
+				var optionList = item_attr.optionSet.options;
+
+				$.each( optionList, function( i_op, item_op )
+				{
+					attributeControl.append( '<option value="' + item_op.code + '">' + item_op.name + '</option>' );
+				});
+			}
+			else if( valueType == "TEXT" || valueType == "LONG_TEXT" || valueType == "NUMBER" || valueType == "INTEGER" || valueType == "INTEGER_POSITIVE"  || valueType == "INTEGER_NEGATIVE" )
+			{
+				attributeControl = $( '<input class="attributeVal" attrid="' + item_attr.id + '" type="text" style="width: 150px;" />' );
+			}
+			else if( valueType == "DATE" )
+			{
+				attributeControl = $( '<input class="attributeVal datepicker" attrid="' + item_attr.id + '" type="text" style="width: 110px;" />' );
+
+			}
+			else if( valueType == "BOOLEAN" )
+			{
+				attributeControl = $( '<select class="attributeVal" attrid="' + item_attr.id + '"><option value="false">No</option><option value="true">Yes</option></select>' );
+			}
+			else
+			{
+				attributeControl = $( '<span>Unknown Attribute valueType: ' + valueType + '</span>' );
+			}
+
+			return attributeControl;
+		}
+		
+
+
+		me.populateAttributes_Data = function( mainTableTag, attributeValues, hasUserRole_Award )
+		{
+			var attrTablesTag = mainTableTag.find( 'table.tbAttributes,table.tbAttributesPRG' );
+
+			$.each( attributeValues, function( i_attrVal, item_attrVal )
+			{
+				// For emtpy values on select, set it to 'false' - on 2.26 changes.
+				if ( item_attrVal.value === '' ) item_attrVal.value = 'false';
+
+				attrTablesTag.find( 'select.attributeVal[attrid="' + item_attrVal.attribute.id + '"]' ).val( item_attrVal.value );
+			});
+		}
+
+
+		// --- Populate Related ------------------
+		// ---------------------------------------
+
+		// --- Main Save Method ------------------
+
+		me.saveCategoryOption = function( catOptionId )
+		{
+
+			var awardSelectionTag = me.tbCatOptionDetailTag.find( 'select.catOption_Award' );
+			
+			me.clearPaints( me.tbCatOptionDetailTag );
+
+
+			if ( catOptionId == "" )
+			{
+				// add new
+				var catOptionData = me.generateData( me.tbCatOptionDetailTag );
+
+				// Check for existing name/shortname/code, and change input tag color!!
+				me.checkDuplicates( catOptionData, me.tbCatOptionDetailTag, function( foundDuplicate )
+				{
+					if ( !foundDuplicate )
+					{
+						MsgManager.appBlock( "Performing add new process..", me.catOptionPopupFormInnerTag );
+
+						var queryUrl = me.queryURL_CatOption;
+
+						RESTUtil.submitPostAsyn( "POST", catOptionData, queryUrl
+						, function( returnJson ) 
+						{ 
+							var importResult = AppUtil.checkAndGet_ImportMessage( returnJson );
+
+							if ( importResult.success && importResult.id !== undefined )
+							{
+								catOptionData.id = importResult.id;
+
+								// Save Award Selection - proceed even if failed
+								me.saveAwardSelection( awardSelectionTag, catOptionData, function()
+								{
+
+									// Set userGroups - public access none, rw with 'JHPIEGO Admin' and r with same name
+									me.checkAndSet_UserGroup_ForCatOption( catOptionData, undefined, undefined, function()
+									{
+										me.checkAndSet_CatOptionGroup( catOptionData, undefined, undefined, function( catOptionGroupId )
+										{
+											// Associate the catOptionGroup to 'Program' COGS.
+											me.checkAndSet_ProgramCOGSAssociation( catOptionGroupId, function() {} );
+
+											
+											// If successfully created catOption, add to the 'Program' Category?
+											me.addToCategory_Program( importResult.id
+											, function() 
+											{
+												MsgManager.appUnblock( me.catOptionPopupFormInnerTag );
+
+												console.log( 'Successfully added category Option to "program" category.' );
+
+												MsgManager.msgAreaShow( 'Created the categoryOption, and added to the category "Program"' );
+												
+												me.dialogFormTag.dialog( "close" );
+												if ( me.updateListTable !== undefined ) me.updateListTable();
+											}
+											, function() 
+											{
+												MsgManager.appUnblock( me.catOptionPopupFormInnerTag );
+
+												alert( 'Created CategoryOption, but failed to add to the category "Program"' );
+												
+												me.dialogFormTag.dialog( "close" );
+												if ( me.updateListTable !== undefined ) me.updateListTable();
+											});
+										});
+									});																	
+								});
+							}
+							else
+							{
+								MsgManager.appUnblock( me.catOptionPopupFormInnerTag );
+
+								var errorMsg = 'Failed to create the categoryOption.';
+								if ( importResult.conflictMsg != "" ) errorMsg += '\nConflicts: ' + importResult.conflictMsg;
+
+								alert( errorMsg );
+							}
+
+						}
+						, function( errorMsg ) 
+						{
+							var errResponseJson = errorMsg.responseJSON;
+
+							MsgManager.appUnblock( me.catOptionPopupFormInnerTag );
+
+							var message = ( errResponseJson !== undefined && errResponseJson.message !== undefined ) ? errResponseJson.message : "";
+	
+							alert( "Failed to update the categoryOption Info: \n" + message );
+						});					
+					}				
+				});					
+			}
+			else
+			{
+				// get original name
+				var catOption_Before = Util.getDeepCopy( me.catOptionData );
+
+				// get catOptionData 
+				var catOptionData = me.generateData( me.tbCatOptionDetailTag, me.catOptionData );
+
+				// Check for existing name/shortname/code, and change input tag color!!
+				me.checkDuplicates( catOptionData, me.tbCatOptionDetailTag, function( foundDuplicate )
+				{
+					if ( !foundDuplicate )
+					{
+						MsgManager.appBlock( "Performing update process..", me.catOptionPopupFormInnerTag );
+
+						var queryUrl = me.queryURL_CatOption + '/' + catOptionId;
+
+						RESTUtil.submitPostAsyn( "PUT", catOptionData, queryUrl
+						, function( returnJson ) 
+						{ 
+
+							// Save Award Selection
+							me.saveAwardSelection( awardSelectionTag, catOptionData, function()
+							{
+								// Set userGroups - public access none, rw with 'JHPIEGO Admin' and r with same name
+								me.checkAndSet_UserGroup_ForCatOption( catOptionData, me.link_userGroup, catOption_Before, function()
+								{
+									// If catOptoin name is changed, change userGroup & catOptionGroupSet associated same name one.
+									me.checkAndSet_CatOptionGroup( catOptionData, me.link_catOptionGroup, catOption_Before, function( catOptionGroupId )
+									{
+											
+										// Associate the catOptionGroup to 'Program' COGS.
+										me.checkAndSet_ProgramCOGSAssociation( catOptionGroupId, function() {} );
+
+										me.renameCatOptionCombo( catOption_Before.name, catOptionData.name, function() {} );
+
+										MsgManager.appUnblock( me.catOptionPopupFormInnerTag );
+
+										MsgManager.msgAreaShow( 'Updated the categoryOption' );
+										
+										me.dialogFormTag.dialog( "close" );
+										if ( me.updateListTable !== undefined ) me.updateListTable();					
+									});
+								});
+							});
+						}
+						, function( errorMsg ) 
+						{
+							var errResponseJson = errorMsg.responseJSON;
+
+							MsgManager.appUnblock( me.catOptionPopupFormInnerTag );
+
+							var message = ( errResponseJson !== undefined && errResponseJson.message !== undefined ) ? errResponseJson.message : "";
+	
+							alert( "Failed to update the categoryOption Info: \n" + message );
+						}
+						);
+					}
+				});
+			}
+		}
+
+
+		// TODO: NEED TO PASS IN UID FOR UPDATE CASE CHECKING..
+		// Check for existing name/shortname/code, and change input tag color!!
+		me.checkDuplicates = function( catOptionData, tableTag, returnFunc )
+		{
+			me.resetDuplicateCheckData( catOptionData, me.duplicateCheckData );
+
+			// perform duplicate check	
+			if ( catOptionData.name !== undefined ) me.checkDuplicate( "name", catOptionData.name, catOptionData.id, me.performDuplicateResultCheck, returnFunc );
+			if ( catOptionData.shortName !== undefined ) me.checkDuplicate( "shortName", catOptionData.shortName, catOptionData.id, me.performDuplicateResultCheck, returnFunc );
+			if ( catOptionData.code !== undefined ) me.checkDuplicate( "code", catOptionData.code, catOptionData.id, me.performDuplicateResultCheck, returnFunc );
+		}
+
+		me.cleanDuplicateAttributeValue = function( catOptionData )
+		{
+			var foundDuplicatedOnes = false;
+			var latestList = [];
+			var newAttributeValues = [];
+
+			$.each( catOptionData.attributeValues, function( i_av, item_av )
+			{
+				var latestOne = Util.getFromList( latestList, item_av.attribute.id, "id" );
+
+				if ( latestOne === undefined )
+				{
+					latestList.push( { "id": item_av.attribute.id, "value": item_av.value, "lastUpdated": item_av.lastUpdated, "count": 0 } );
+				}
+				else
+				{
+					latestOne.count++;
+					foundDuplicatedOnes = true;
+
+					// figure out which is lastet..
+					if ( item_av.lastUpdated > latestOne.lastUpdated )
+					{
+						latestOne.lastUpdated = item_av.lastUpdated;
+					}
+				}
+			});
+
+			// get the unique 
+			$.each( catOptionData.attributeValues, function( i_av, item_av )
+			{
+				var latestOne = Util.getFromList( latestList, item_av.attribute.id, "id" );
+
+				if ( latestOne.lastUpdated == item_av.lastUpdated )
+				{
+					newAttributeValues.push( Util.getDeepCopy( item_av ) );
+				}
+			});
+
+		
+			// Replace the list
+			catOptionData.attributeValues = newAttributeValues;
+
+			return foundDuplicatedOnes;
+		}
+
+
+		me.clearPaints = function( tableTag )
+		{
+			Util.paintClear( me.tbCatOptionDetailTag.find( '.catOption_Name' ) );
+			Util.paintClear( me.tbCatOptionDetailTag.find( 'input.catOption_ShortName' ) );
+			Util.paintClear( me.tbCatOptionDetailTag.find( 'input.catOption_Code' ) );
+		}
+
+
+		me.resetDuplicateCheckData = function( catOptionData, duplicateCheckData )
+		{
+			duplicateCheckData.foundDuplicates.name = false;
+			duplicateCheckData.foundDuplicates.shortName = false;
+			duplicateCheckData.foundDuplicates.code = false;
+
+			duplicateCheckData.checkPerforms.name = ( catOptionData.name !== undefined ) ? false: true;
+			duplicateCheckData.checkPerforms.shortName = ( catOptionData.shortName !== undefined ) ? false: true;
+			duplicateCheckData.checkPerforms.code = ( catOptionData.code !== undefined ) ? false: true;
+		}
+
+
+		me.checkDuplicate = function( property, value, updateCaseId, performDuplicateResultCheck, returnFunc )
+		{
+			var queryUrl = me.queryURL_CatOption + '.json?paging=false&fields=' + property + '&filter=' + property + ':eq:' + value;
+
+			queryUrl += ( updateCaseId !== undefined ) ? '&filter=id:ne:' + updateCaseId : '';
+
+			RESTUtil.getAsynchData( queryUrl, function( json_data )
+			{
+				var foundDuplicates = false;
+
+				if ( json_data.categoryOptions.length > 0 )
+				{
+					me.duplicateCheckData.foundDuplicates[ property ] = true;
+				}
+
+				me.duplicateCheckData.checkPerforms[ property ] = true;
+
+				performDuplicateResultCheck( returnFunc );
+			});
+		}		
+
+
+		me.performDuplicateResultCheck = function( returnFunc )
+		{
+			var checkPerforms = me.duplicateCheckData.checkPerforms;
+			var duplicates = me.duplicateCheckData.foundDuplicates;
+
+			// If all done with checking..
+			if ( checkPerforms.name && checkPerforms.shortName && checkPerforms.code )
+			{
+				var message = "";
+
+				if ( duplicates.name ) 
+				{
+					Util.paintWarning( me.tbCatOptionDetailTag.find( '.catOption_Name' ) );
+					message += ( message == "" ) ? "name" : ", name" ;
+				}
+
+				if ( duplicates.shortName ) 
+				{
+					Util.paintWarning( me.tbCatOptionDetailTag.find( 'input.catOption_ShortName' ) );
+					message += ( message == "" ) ? "shortName" : ", shortName" ;
+				}
+
+				if ( duplicates.code ) 
+				{
+					Util.paintWarning( me.tbCatOptionDetailTag.find( 'input.catOption_Code' ) );
+					message += ( message == "" ) ? "code" : ", code" ;
+				}
+
+				if ( message != "" )
+				{
+					alert( "Category Option with same " + message + " already exists" );
+				}
+
+				returnFunc( message != "" );
+			}
+		}
+
+
+		//------------------
+
+		me.saveAwardSelection = function( selectAwardTag, json_CatOptionData, returnFunc )
+		{
+			var alreadyExists = false;
+
+			var selectedAwardId = selectAwardTag.val();
+			var selectedAwardName = Util.getSelectedOptionName( selectAwardTag );
+
+
+			// First, Remove all the existing Award type catOptionGroup elements tie to the catOptionGroup existing..
+			if ( json_CatOptionData.categoryOptionGroups !== undefined )
+			{
+				if ( me.json_AwardData.categoryOptionGroups !== undefined )
+				{
+					$.each( json_CatOptionData.categoryOptionGroups, function( i_cog, item_cog )
+					{
+						$.each( me.json_AwardData.categoryOptionGroups, function( i_awd, item_awd )
+						{
+							if ( item_awd.id == item_cog.id )
+							{
+								// if the selection (award, catOptionGroup) already exists, do not remove this catOption's association from the catOptionGroup. 
+								if ( item_awd.id == selectedAwardId )
+								{
+									alreadyExists = true;
+								}
+								else
+								{
+									me.associateCatOptionGroup( json_CatOptionData.id, item_cog.id, function( success )
+									{
+										if ( success ) console.log( 'Successfully de-associated with catOptionGroup "' + item_cog.name + '"' );
+										else alert( 'Fail to de-associate with catOptionGroup "' + item_cog.name + '"' );
+									}, "DELETE" );
+								}
+							}
+						});							
+					});
+				}				
+			}
+
+
+			// 2. Add the association
+			if ( !alreadyExists && selectedAwardId != "" )
+			{
+				me.associateCatOptionGroup( json_CatOptionData.id, selectedAwardId, function( success )
+				{
+					if ( returnFunc !== undefined ) returnFunc();
+
+					if ( success ) console.log( 'Successfully associated with catOptionGroup "' + selectedAwardName + '"' );
+					else alert( 'Fail to associate with catOptionGroup "' + selectedAwardName + '"' );
+				});				
+			}
+			else
+			{
+				if ( returnFunc !== undefined ) returnFunc();
+			}
+		}
+
+		// ------ Fix called from outside - for Mass fix.
+		me.fixFromOutside = function( catOptionData, returnFunc )
+		{
+			var catOption_Before = catOptionData;
+
+			// TODO: Keep the error message to not show up?? - pass parameter for this.
+			me.getSameNamedLinks( catOptionData, function( json_userGroup, json_catOptionGroup )
+			{
+				var link_userGroup = json_userGroup;
+				var link_catOptionGroup = json_catOptionGroup;
+
+				// Set userGroups - public none, rw 'JHPIEGO Admin' and r same name
+				me.checkAndSet_UserGroup_ForCatOption( catOptionData, link_userGroup, catOption_Before, function()
+				{
+					// Check and Set CatOtionGroup
+					me.checkAndSet_CatOptionGroup( catOptionData, link_catOptionGroup, catOption_Before, function( catOptionGroupId )
+					{							
+						// Check and Set catOptionGroupSet 'Program' association.
+						me.checkAndSet_ProgramCOGSAssociation( catOptionGroupId, function() 
+						{
+							// Always gets called regardless of any problem during avoide
+							// since they are designed to return even for failure.
+							returnFunc();
+						} );
+
+						// Do not need to rename the catOptionCombo at here..?
+
+
+						//MsgManager.appUnblock( me.catOptionPopupFormInnerTag );
+						//MsgManager.msgAreaShow( 'Updated the categoryOption' );
+					});
+				});
+			});
+		};
+
+		// ----------------------------------------------
+		// --- End of Main Save Method ------------------
+
+
+		// ----------------------------------------------
+		// --- Related Add / Update / Change Requests
+
+		/*
+		me.associatedUserGroupNameUpdate = function( catOption_Before, catOptionData, returnFunc )
+		{
+			var catOptionName_Before = catOption_Before.name;
+
+
+			if ( catOptionName_Before != catOptionData.name )
+			{
+				var userGroupMatch;
+
+				// userGroup name update - if same matching name exists.
+				$.each( catOptionData.userGroupAccesses, function( i_ug, item_ug )
+				{
+					if ( item_ug.displayName == catOptionName_Before )
+					{
+						userGroupMatch = item_ug;
+						return false;
+					}
+				});
+
+				if ( userGroupMatch !== undefined )
+				{
+					me.userGroupRename( userGroupMatch.id, catOptionData.name, returnFunc );
+				}
+				else
+				{
+					if ( returnFunc !== undefined ) returnFunc();
+				}
+			}
+			else
+			{
+				if ( returnFunc !== undefined ) returnFunc();
+			}
+		}
+		*/
+
+
+		me.addToCategory_Program = function( newCategoryOptionId, returnSuccessFunc, returnFailedFunc )
+		{
+			var queryUrl = _queryURL_CatProgram + '/categoryOptions/' + newCategoryOptionId;
+
+			RESTUtil.submitPostAsyn( "POST", new Object(), queryUrl
+			, returnSuccessFunc
+			, returnFailedFunc
+			);			
+		}
+
+
+		// ---- User Group Related ----------------------
+
+		me.checkAndSet_UserGroup_ForCatOption = function( catOptionData, link_userGroup, catOption_Before, returnFunc )
+		{
+
+			// Check for existing linked userGroup that has same name as old name
+			if ( link_userGroup !== undefined && catOption_Before !== undefined )
+			{
+				// simply rename them if the name has changed?
+				if ( catOptionData.name != catOption_Before.name )
+				{
+					console.log( 'renaming' );
+
+					me.userGroupRename( link_userGroup.userGroupUid, catOptionData.name );
+				}
+
+				// Always re-associate the userGroup.
+				me.associateUserGroup( "categoryOption", catOptionData.id, [ link_userGroup.id ], catOptionData, returnFunc );
+			}
+			else
+			{
+				// For Add New or Update with No Link, we need to find/add or create/add userGroup with same name
+				me.getUserGroup_OrCreate( catOptionData.name, function( json_UserGroup )
+				{
+					if ( json_UserGroup !== undefined )
+					{
+						// Always associate/re-associate the userGroup.
+						me.associateUserGroup( "categoryOption", catOptionData.id, [ json_UserGroup.id ], undefined, returnFunc );
+					}
+					else
+					{
+						if ( returnFunc !== undefined ) returnFunc(); 
+					}
+				});
+			}
+		}
+
+
+		// Get Call from checkAndSet_CatOptionGroup()'
+		me.setUserGroup_ForCatOptionGroup = function( catOptionData, catOptionGroupId, returnFunc )
+		{
+			// Always call this on 'Create'/'Update'/'Mass Update' - for resetting the catOptionGroup sharing.
+			if ( catOptionGroupId === undefined ) 
+			{
+				if ( returnFunc !== undefined ) returnFunc();
+			}
+			else
+			{
+				var userGroupIds = [];
+				
+
+				// TODO: Requested to add _userGroupId_JPI_All always!!
+				//if ( AppUtil.getAttributeValue_ById( catOptionData.attributeValues, _attributeId_JPI ) == "true" ) userGroupIds.push( _userGroupId_JPI_All );
+				userGroupIds.push( _userGroupId_JPI_All );
+
+				if ( AppUtil.getAttributeValue_ById( catOptionData.attributeValues, _attributeId_MCSP ) == "true" ) userGroupIds.push( _userGroupId_MCSP_All );
+
+				// Always associate/re-associate the userGroup.
+				me.associateUserGroup( "categoryOptionGroup", catOptionGroupId, userGroupIds, undefined, returnFunc );
+			}
+		}
+
+
+		// ------------------------------------------------------
+
+		me.associateUserGroup = function( objectTypeName, objectId, userGroupIds, catOptionData, returnFunc )
+		{
+			// Set the userGroupAccesses
+			var json_userGroupAccesses = [];
+
+			me.setUGAccess( objectTypeName, json_userGroupAccesses, userGroupIds, catOptionData );
+
+			// Associate the UserGroup with CatOption (Object)
+			//		objectTypeName = categoryOption, categoryOptionGroup(?)
+			var userGroups = 
+				{
+					"meta": {
+						"allowPublicAccess": false,
+						"allowExternalAccess": false
+					},
+					"object": {
+						"id": objectId,
+						"publicAccess": "--------",
+						"externalAccess": false,
+						"userGroupAccesses": json_userGroupAccesses
+					}
+				};
+			
+
+			var queryUrl = _queryURL_api + 'sharing?type=' + objectTypeName + '&id=' + objectId;
+
+			RESTUtil.submitPostAsyn( "POST", userGroups, queryUrl
+			, function( returnJson ) 
+			{ 
+				if ( returnFunc !== undefined ) returnFunc(); 
+				console.log( 'Successfully setup UserGroup Accesses and public sharing - for the ' + objectTypeName );
+			}
+			, function()
+			{
+				if ( returnFunc !== undefined ) returnFunc(); 
+				alert( 'Failed to setup UserGroup Accesses and public sharing - for the ' + objectTypeName );
+			});
+
+		}
+
+		me.setUGAccess = function( objectTypeName, json_userGroupAccesses, userGroupIds, catOptionData )
+		{
+			// It seems 'categoryOption' has 'data' section (3rd & 4th on '--------') on sharing, but not 'categoryOptionGroup'.
+			var dataAccessDefault = ( objectTypeName === 'categoryOption' ) ? "rw" : "--";
+
+
+			console.log( objectTypeName + ' - dataAccessDefault: ' + dataAccessDefault );
+
+
+			// Default ones should have '--rw' (read-write in data)
+			var access_JHPIEGOAdmin = "--" + dataAccessDefault + "----";
+
+			// JHPIEGO Admin one
+			if ( catOptionData !== undefined && catOptionData.userGroupAccesses !== undefined )
+			{
+				var userGroup_JHPIEGOAdminObj = Util.getFromList( catOptionData.userGroupAccesses, _userGroupId_JHPIEGOAdmin, "id" );
+
+				if ( userGroup_JHPIEGOAdminObj !== undefined && userGroup_JHPIEGOAdminObj.access !== undefined )
+				{
+					access_JHPIEGOAdmin = userGroup_JHPIEGOAdminObj.access;
+
+					console.log( userGroup_JHPIEGOAdminObj );
+				}	
+			}
+
+			json_userGroupAccesses.push( { "id": _userGroupId_JHPIEGOAdmin, "access": 'rw' + access_JHPIEGOAdmin.substring( 2 ) } );
+
+
+			// UserGroup - matched name one?
+			$.each( userGroupIds, function( i_ugid, item_ugid )
+			{
+				// Default ones should have '--rw' (read-write in data)
+				var accessUG = "--" + dataAccessDefault + "----";
+
+				if ( catOptionData !== undefined && catOptionData.userGroupAccesses !== undefined )
+				{
+					var accessUGObj = Util.getFromList( catOptionData.userGroupAccesses, item_ugid, "id" );
+					if ( accessUGObj !== undefined && accessUGObj.access !== undefined )
+					{
+						accessUG = accessUGObj.access;
+
+						console.log( accessUGObj );
+					}						
+				}
+				
+				json_userGroupAccesses.push( { "id": item_ugid, "access": 'rw' + accessUG.substring( 2 ) } );
+			});		
+
+			console.log( 'json_userGroupAccesses: ' + JSON.stringify( json_userGroupAccesses ) );	
+		}
+
+
+		me.getUserGroup_OrCreate = function( catOptionName, returnFunc )
+		{
+			var queryUrl = _queryURL_api + 'userGroups.json?fields=access,id,displayName,userGroupUid&filter=name:eq:' + catOptionName; 
+
+
+			//console.log( 'on getUserGroup_OrCreate, looking for userGroup with name: ' + catOptionName );
+			// At here, does it always not find the userGroup?
+			// Changes from 2.24 api?
+
+			RESTUtil.getAsynchData( queryUrl, function( json_Data )
+			{
+				//console.log( json_Data );
+
+				if ( json_Data.userGroups !== undefined && json_Data.userGroups.length > 0 )
+				{
+					// has id, name..
+					returnFunc( json_Data.userGroups[0] );
+				}
+				else
+				{
+					//console.logo( 'createUserGroup case' );
+					me.createUserGroup( catOptionName, returnFunc );
+				}
+			}
+			, function() 
+			{ 
+				returnFunc(); 
+			});
+		}
+
+
+		me.createUserGroup = function( name, returnFunc )
+		{
+			// If does not exists, create one and create object with id, name
+			var json_Data = { "name": name };
+
+			var queryUrl = _queryURL_api + 'userGroups';
+
+			RESTUtil.submitPostAsyn( "POST", json_Data, queryUrl
+			, function( returnJson ) 
+			{ 
+				var importResult = AppUtil.checkAndGet_ImportMessage( returnJson );
+
+				if ( importResult.success )
+				{
+					console.log( 'Successfully created userGroup "' + name + '"' );
+
+					returnFunc( { "id": importResult.id, "userGroupUid": importResult.id, "displayName": name } );
+				}
+				else
+				{
+					alert( 'Failed to create userGroup, "' + name + '"' );
+					returnFunc();
+				}
+			}
+			, function()
+			{
+				alert( 'Failed to create userGroup, "' + name + '"' );
+				returnFunc();						
+			});
+		}
+
+
+		// THIS PROBABLY REMOVES ALL THE USERS...
+		// Find out if I have any other case like this!!!!
+		// Use of 'PUT' and just the object without re-retrieving
+
+		me.userGroupRename = function( userGroupId, newName, returnFunc )
+		{
+			var queryUrl = _queryURL_api + 'userGroups/' + userGroupId + '/name';
+
+			var json_Data = { "name": newName };
+
+			RESTUtil.submitPostAsyn( "PATCH", json_Data, queryUrl
+			, function( returnJson ) 
+			{ 
+				//var importResult = AppUtil.checkAndGet_ImportMessage( returnJson );
+
+				if ( returnFunc !== undefined ) returnFunc( true );
+
+				console.log( 'Successfully updated the userGroup name to "' + newName + '"' );
+			}
+			, function()
+			{
+				if ( returnFunc !== undefined ) returnFunc( false );
+				alert( 'Failed to change userGroup name to "' + newName + '"' );
+			});
+		}
+
+		// --- End of User Group Related ----------------------
+
+
+		// --- CatOptionGroup Related -------------------------
+
+		me.checkAndSet_CatOptionGroup = function( catOptionData, link_catOptionGroup, catOption_Before, returnFunc )
+		{
+
+			// 'Analytic''s Program Assocation is done at here!!!
+			// HOWEVER, IT DOES NOT COVER ALL THE CASES!!!
+			// <-- NEED TO DO A SEPARATE ASSOCIATION CHECK AND RE-ASSOCIATE!!
+
+			if ( link_catOptionGroup !== undefined && catOption_Before !== undefined )
+			{
+				console.log( ' == Case 1. Found existing catOptionGroup' );
+				console.log( link_catOptionGroup );
+				console.log( catOption_Before );
+
+				// On Update case, if link exists, then, check for renaming.
+				if ( catOption_Before.name != catOptionData.name || catOption_Before.shortName != catOptionData.shortName )
+				{
+					console.log( ' == name or shortName different' );			
+
+					me.catOptionGroupRename( link_catOptionGroup.id, catOptionData, function() 
+					{
+						console.log( ' == After success - catOptionGroupRename' );			
+					} );
+				}
+
+				me.setUserGroup_ForCatOptionGroup( catOptionData, link_catOptionGroup.id
+				, function() 
+				{	
+					returnFunc( link_catOptionGroup.id );
+				});
+			}
+			else
+			{
+				// For Add New or Update with No Link case, we need to find/add or create/add catOptionGroup with same name
+				me.findCatOptionGroup_ByName( catOptionData.name, function( json_catOptionGroup )
+				{
+					// Same named Not found, thus Create New Case
+					if ( json_catOptionGroup !== undefined )
+					{
+						me.associateCatOptionGroup( catOptionData.id, json_catOptionGroup.id, function()
+						{
+							// Change short name if they are different
+							me.catOptionGroupRename( json_catOptionGroup.id, catOptionData, function() {} );
+
+							me.setUserGroup_ForCatOptionGroup( catOptionData, json_catOptionGroup.id
+							, function() 
+							{	
+								returnFunc( json_catOptionGroup.id );
+							});
+						});
+					}
+					else
+					{
+						// if not found, create one.. in 'Create--', it has association logic to catOption as well.
+						me.createCatOptionGrp_SameNamedWithAsso( catOptionData, function( catOptionGroup )
+						{
+							var catOptionGroupId = ( catOptionGroup !== undefined ) ? catOptionGroup.id : undefined;
+
+							// Should it be linear? Yes, it should wait until this finishes for next step.
+							me.setUserGroup_ForCatOptionGroup( catOptionData, catOptionGroupId
+							, function() 
+							{
+								returnFunc( catOptionGroupId );							
+							});
+						});
+					}
+				});	
+			}
+		}
+
+
+		me.findCatOptionGroup_ByName = function( name, returnFunc )
+		{
+			var queryUrl = _queryURL_api + 'categoryOptionGroups.json?filter=name:eq:' + name;
+
+			// retrieve
+			$.get( queryUrl, function( json_Data )
+			{
+				if ( json_Data.categoryOptionGroups !== undefined &&  json_Data.categoryOptionGroups.length > 0 )
+				{
+					returnFunc( json_Data.categoryOptionGroups[0] );
+				}
+				else
+				{	
+					returnFunc();
+				}
+			});
+		}
+
+		//me.checkAndSet_ProgramCOGSAssociation( importResult.id );
+
+
+		me.createCatOptionGrp_SameNamedWithAsso = function( catOptionData, returnFunc )
+		{
+			// If does not exists, create one and create object with id, name
+			var catOptionGroupJson = { "name": catOptionData.name
+				, "shortName": catOptionData.shortName
+				, "dataDimensionType": "ATTRIBUTE"
+				, "categoryOptions": [ { "id": catOptionData.id } ] };
+
+			AppUtil.createCatOptionGroup( catOptionGroupJson, returnFunc );
+		}
+
+		me.associateCatOptionGroup = function( catOptionId, catOptionGroupId, returnFunc, option )
+		{
+			var command = "POST";
+			var queryUrl = _queryURL_api + 'categoryOptionGroups/' + catOptionGroupId + '/categoryOptions/' + catOptionId;
+
+			if ( option !== undefined )
+			{
+				if ( option == "DELETE" ) command = option;
+			}
+
+			RESTUtil.submitPostAsyn( command, new Object(), queryUrl
+			, function() { if ( returnFunc !== undefined ) returnFunc( true ); }
+			, function() { if ( returnFunc !== undefined ) returnFunc( false ); }
+			);		
+		}
+
+		me.catOptionGroupRename = function( catOptionGroupId, newData, returnFunc )
+		{
+			var queryUrl = _queryURL_api + 'categoryOptionGroups/' + catOptionGroupId;
+
+			RESTUtil.getAsynchData( queryUrl, function( json_data )
+			{
+				//var json_data = {};			
+				json_data.name = newData.name;
+				json_data.shortName = newData.shortName;
+
+				var msgStr = 'name: "' + json_data.name + '", shortName: "' + json_data.shortName + '"';
+
+
+				// update the name and shortName - Changed from 'PUT' implementation to 'PATCH' - since 2.24
+				RESTUtil.submitPostAsyn( "PUT", json_data, queryUrl
+				, function( returnJson ) 
+				{ 
+					//var importResult = AppUtil.checkAndGet_ImportMessage( returnJson );
+					//if ( importResult.success )
+						
+					console.log( 'Successfully updated the categoryOptionGroups - ' + msgStr );
+
+					if ( returnFunc !== undefined ) returnFunc( true );
+
+				}
+				, function()
+				{
+					alert( 'Failed to change categoryOptionGroups  - ' + msgStr );
+
+					if ( returnFunc !== undefined ) returnFunc( false );
+				});
+
+			}, 
+			function() 
+			{
+				alert( 'Failed to retrieve the categoryOptionGroups  - ' + catOptionGroupId );
+
+				if ( returnFunc !== undefined ) returnFunc( false );		
+			});
+
+		}
+		// --- End of CatOptionGroup Related -------------------------
+
+
+		// --- ProgramCOGSAssociation Related -------------------------
+
+		me.checkAndSet_ProgramCOGSAssociation = function( catOptionGroupId, returnFunc )
+		{
+			if ( catOptionGroupId !== undefined )
+			{
+				me.findProgramCOGSAssociation( catOptionGroupId, function( associationFound )
+				{
+					if ( associationFound )
+					{
+						// Association already exists.
+						if ( returnFunc !== undefined ) returnFunc( true );
+					}
+					else
+					{
+						AppUtil.addCatOptionGrpToGrpSet( _catOptionGroupSet_Program, catOptionGroupId
+						, function()
+						{
+							console.log( 'Successfully associated to Category Option Group Set - Program' );
+							if ( returnFunc !== undefined ) returnFunc( true );
+						}
+						, function() 
+						{
+							alert( 'Failed to associate the Category Option Group to GroupSet' );
+							if ( returnFunc !== undefined ) returnFunc( false );
+						});
+					}
+				});
+			}
+			else
+			{
+				if ( returnFunc !== undefined ) returnFunc( false );
+			}
+		}
+
+
+		me.findProgramCOGSAssociation = function( catOptionGroupId, returnFunc )
+		{
+			var queryUrl = _queryURL_api + 'categoryOptionGroupSets/' + _catOptionGroupSet_Program + '.json?fields=categoryOptionGroups';
+
+			RESTUtil.getAsynchData( queryUrl, function( json_data )
+			{
+				var catOptionGroupLink = Util.getFromList( json_data.categoryOptionGroups, catOptionGroupId, "id" );
+
+				returnFunc( catOptionGroupLink !== undefined );
+			});
+		}
+
+		// --- End of ProgramCOGSAssociation Related -------------------------
+
+		// --- CatOptionCombo Related -------------------------
+
+		me.renameCatOptionCombo = function( name, newName, returnFunc )
+		{
+			me.findCatOptionCombo_ByName( name, function( json_catOptionCombo )
+			{
+				// Same named Not found, thus Create New Case
+				if ( json_catOptionCombo !== undefined )
+				{
+						// Change short name if they are different
+					me.catOptionComboRename( json_catOptionCombo.id, { 'name': newName, 'shortName': newName }, function() {} );
+				}
+			});	
+		}
+
+		me.findCatOptionCombo_ByName = function( name, returnFunc )
+		{
+			var queryUrl = _queryURL_api + 'categoryOptionCombos.json?filter=name:eq:' + name;
+
+			// retrieve
+			$.get( queryUrl, function( json_Data )
+			{
+				if ( json_Data.categoryOptionCombos !== undefined &&  json_Data.categoryOptionCombos.length > 0 )
+				{
+					returnFunc( json_Data.categoryOptionCombos[0] );
+				}
+				else
+				{	
+					returnFunc();
+				}
+			});
+		}
+
+		me.catOptionComboRename = function( catOptionComboId, newData, returnFunc )
+		{
+			var queryUrl = _queryURL_api + 'categoryOptionCombos/' + catOptionComboId;
+
+			RESTUtil.getAsynchData( queryUrl, function( json_data )
+			{
+				//var json_data = {};
+			
+				json_data.name = newData.name;
+				json_data.shortName = newData.shortName; 
+
+				var msgStr = 'name: "' + json_data.name + '", shortName: "' + json_data.shortName + '"';
+
+				// update the name and shortName - Changed from 'PUT' implementation to 'PATCH' - since 2.24
+				RESTUtil.submitPostAsyn( "PUT", json_data, queryUrl
+				, function( returnJson ) 
+				{ 
+					//console.log( ' == ReturnJson: ' + JSON.stringify( returnJson ) );
+
+					//var importResult = AppUtil.checkAndGet_ImportMessage( returnJson );
+					//if ( importResult.success )
+						
+					console.log( 'Successfully updated the categoryOptionCombos - ' + msgStr );
+
+					if ( returnFunc !== undefined ) returnFunc( true );
+
+				}
+				, function()
+				{
+					alert( 'Failed to change categoryOptionCombos  - ' + msgStr );
+
+					if ( returnFunc !== undefined ) returnFunc( false );
+				});
+
+			}, 
+			function() 
+			{
+				alert( 'Failed to retrieve the categoryOptionCombos  - ' + catOptionComboId );
+
+				if ( returnFunc !== undefined ) returnFunc( false );		
+			});
+
+		}
+
+		// --- End of CatOptionCombo Related -------------------------
+
+
+		// --- Related Add / Update / Change Requests
+		// ----------------------------------------------
+
+		me.resetData = function( tableTag )
+		{
+			me.catOptionId = "";
+			me.catOptionData = undefined;
+			me.link_userGroup = undefined;
+			me.link_catOptionGroup = undefined;
+
+
+			tableTag.find( '.catOption_Name' ).val( "" );
+			tableTag.find( 'input.catOption_ShortName' ).val( "" );
+			tableTag.find( 'input.catOption_StartDate' ).val( "" );
+			tableTag.find( 'input.catOption_EndDate' ).val( "" );
+			tableTag.find( 'input.catOption_Code' ).val( "" );
+
+			tableTag.find( 'select.catOption_Award' ).empty();
+			tableTag.find( '.awardFullName' ).text( '' ).hide();
+
+			tableTag.find( 'textarea.catOption_Notes' ).val( "" );
+
+			tableTag.find( 'table.tbAttributes[attrType] tr' ).remove();
+			tableTag.find( 'table.tbAttributesPRG td[attrid]' ).empty();
+
+			tableTag.find( 'span.accessPublic' ).text( "" );
+			tableTag.find( 'span.accessUserGroups_RW' ).text( "" );
+			tableTag.find( 'span.accessUserGroups_DataEntry' ).text( "" );
+
+			AppUtil.setStatus( tableTag.find( 'img.accessPublic_Status' ), 'Wrong', ''  );
+			AppUtil.setStatus( tableTag.find( 'img.accessUserGroups_RW_Status' ), 'Wrong', ''  );
+			AppUtil.setStatus( tableTag.find( 'img.accessUserGroups_DataEntry_Status' ), 'Wrong', ''  );
+
+			AppUtil.setStatus( tableTag.find( 'img.status_DataEntry' ), 'Wrong', ''  );
+			AppUtil.setStatus( tableTag.find( 'img.status_Analytics' ), 'Wrong', ''  );
+			AppUtil.setStatus( tableTag.find( 'img.status_Award' ), 'Wrong', ''  );
+			AppUtil.setStatus( tableTag.find( 'img.status_Private' ), 'Wrong', '' );
+
+
+			Util.disableTag( tableTag.find( 'input,select,textarea' ), true );
+
+			//me.divAccessFixTag.hide();
+			//me.btnSaveTag.hide();
+
+
+			// Select first tab
+            $( '#catOptionTabs' ).find( 'li.tabLi:first a.tabAnchor' ).click();
+
+
+			MsgManager.appUnblock( me.catOptionPopupFormInnerTag );
+		}
+
+
+		// -----------------------------------------------
+
+		me.setup_Events = function()
+		{
+			me.btnSaveTag.click( function()
+			{
+				AppUtil.checkForMandatory( me.tbCatOptionDetailTag, function()
+				{
+					me.saveCategoryOption( me.catOptionId );
+				});
+			});
+
+
+			me.btnCancelTag.click( function()
+			{
+				me.dialogFormTag.dialog( "close" );
+			});
+
+
+			/*
+			me.divAccessFixTag.click( function()
+			{
+				me.checkAndSet_UserGroup_ForCatOption( me.catOptionData, function()
+				{
+					me.openForm( me.catOptionData.id );
+				});
+			});
+			*/
+
+			// update Award Full Name
+			me.tbCatOptionDetailTag.find( 'select.catOption_Award' ).change( function()
+			{
+				var selectedVal = $( this ).val();
+
+				var awardFullNameTag = me.tbCatOptionDetailTag.find( '.awardFullName' );				
+				awardFullNameTag.text( '' ).hide();
+
+				if ( selectedVal != "" )
+				{
+					var selectedAwardInfo = Util.getFromList( me.json_AwardData.categoryOptionGroups, selectedVal, "id" );
+
+					awardFullNameTag.text( selectedAwardInfo.name ).show();				
+				}
+			});
+
+
+			// 
+			/* me.tbCatOptionDetailTag.find( 'select.attributeVal' ).change( function()
+			{
+				// Only on update mode, allow users to save this on change
+				if ( me.editMode == "Update" )
+				{
+				}
+			}); */
+
+		}
+
+		me.setup_tab = function()
+		{
+			jQuery( "#catOptionTabs" ).tabs( {active: 0} );
+		}
+
+		me.setup_datePickers = function()
+		{
+			me.dialogFormTag.find( '.datepicker' ).datepicker( 
+			{ 
+				dateFormat: "yy-mm-dd"
+				,changeMonth: true
+				,changeYear: true
+			} );
+		}
+
+
+		// --------------------------
+		// Run methods
+
+		// Initial Run Call
+		me.initialSetup();
+
+	}
+
+
+	// -------------------------------------------
+	// Class - Award Add Popup Form
+
+	function AwardPopupForm()
+	{
+		var me = this;
+
+		me.dialogFormTag = $( "#awardPopupForm" );
+
+		me.divAwardPopupFormInnerTag = $( '#divAwardPopupFormInner' );
+		me.tbAwardTag = me.dialogFormTag.find( 'table.tbAward' );
+
+		me.award_NameTag = $( '#award_Name' );
+		me.award_ShortNameTag = $( '#award_ShortName' );
+		me.award_CodeTag = $( '#award_Code' );
+		me.award_StartDateTag = $( '#award_StartDate' );
+		me.award_EndDateTag = $( '#award_EndDate' );
+
+		me.btnSaveTag = me.dialogFormTag.find( '.btnSave' );
+		me.btnCancelTag = me.dialogFormTag.find( '.btnCancel' );
+
+		me.width = me.dialogFormTag.attr( 'formWidth' );
+		me.height = me.dialogFormTag.attr( 'formHeight' );
+
+		//me.queryURL_CatOption = _queryURL_api + 'categoryOptions';
+		//me.queryURL_Attributes = _queryURL_api + 'attributes.json?paging=false&fields=id,code,name&filter=categoryOptionAttribute:eq:true&fields=id,name,valueType,optionSet[options[id,code,name]]';
+
+		//me.editMode = "New";  // "New" vs "Update"
+
+		// ------------------------------------------------
+
+		// Initial Setup Call
+		me.initialSetup = function()
+		{			
+			me.FormPopupSetup();
+
+			me.setup_Events();
+
+			me.setup_datePickers();
+		};
+
+		// ------------------------------------------------------------
+
+		me.FormPopupSetup = function()
+		{
+			// Set up the form
+			me.dialogFormTag.dialog({
+			autoOpen: false
+			,title: "Award Add/Edit"
+			,width: me.width
+			//,height: me.height				  
+			,modal: true				
+			,close: function( event, ui ) 
+				{
+					$( this ).dialog( "close" );
+				}				
+			});
+		};
+
+
+		me.openForm = function( catOptionId )
+		{
+			// reset memory data and table values
+			me.resetData( me.tbAwardTag );
+
+			//me.btnSaveTag.show();
+
+			// populate attribute data first.
+			//me.retrieveOptionSetAttributes( function( json_Attributes ) {
+
+				//me.populateAttributes_TableRows( "JPI", me.tbCatOptionDetailTag, json_Attributes );
+
+				/*
+				// If 'update' case, populate data.
+				if ( catOptionId !== undefined )
+				{
+					me.editMode = "Update";
+
+						me.dialogFormTag.dialog( "open" );
+					});
+				}
+				*/
+
+				me.editMode = "New";
+
+				//AppUtil.populateSelect( awardsTag, "Award", me.json_AwardData.categoryOptionGroups, { "value": "id", "text": "code" } );
+
+				// resetData empties me.catOptionId
+				me.dialogFormTag.dialog( "open" );
+
+
+			//});
+
+		}
+		
+
+		me.resetData = function( tbAwardTag )
+		{
+			Util.paintClear( tbAwardTag.find( 'input,select' ).val( '' ) );
+
+			me.award_NameTag.val( 'AWD - ' );
+		}
+
+
+		me.addAwardCOG = function()
+		{
+			// If does not exists, create one and create object with id, name
+			var catOptionGroupJson = { "name": me.award_NameTag.val()
+				, "shortName": me.award_ShortNameTag.val()
+				, "code": me.award_CodeTag.val()
+				, "dataDimensionType": "ATTRIBUTE"
+				, "attributeValues": [ 
+					{"value": me.award_StartDateTag.val(), "attribute": {"id": _attributeId_Award_StartDate} }
+					,{"value": me.award_EndDateTag.val(), "attribute": {"id": _attributeId_Award_EndDate} }
+				]				
+			};
+						
+			MsgManager.appBlock( "Adding new catOptionGroup '" + catOptionGroupJson.name + "'..", me.divAwardPopupFormInnerTag );
+
+
+			AppUtil.createCatOptionGroup( catOptionGroupJson, function( jsonCatOptionGrp, errMsg )
+			{
+				if ( jsonCatOptionGrp !== undefined )
+				{
+					console.log( 'CASE 1 - jsonCatOptionGrp:' );
+					console.log( jsonCatOptionGrp );
+
+					alert( 'Successfully created the Award CatOptionGroup "' + jsonCatOptionGrp.name + '".' );
+
+					AppUtil.addCatOptionGrpToGrpSet( _catOptionGroupSet_Awards, jsonCatOptionGrp.id
+					, function() {
+						console.log( 'Successfully associated CatOptionGroup "' + jsonCatOptionGrp.name + '" to "Award" CatOptionGroupSet.' );
+						//if ( returnFunc !== undefined ) returnFunc( true );
+					}
+					, function() {
+						console.log( 'Failed to associate to "Award" CatOptionGroupSet.' );
+						alert( 'Failed to associate to "Award" CatOptionGroupSet.' );
+						//if ( returnFunc !== undefined ) returnFunc( false );
+					}
+					, function() {}
+					, function() {
+
+						MsgManager.appUnblock( me.divAwardPopupFormInnerTag );
+
+						MsgManager.msgAreaShow( 'Created the Award CatOptionGroup - "' + jsonCatOptionGrp.name + "'." );
+													
+						me.dialogFormTag.dialog( "close" );
+					});
+				}
+				else if ( errMsg !== undefined )
+				{
+					MsgManager.appUnblock( me.divAwardPopupFormInnerTag );
+
+					alert( 'Failed to add the Award CatOptionGroup. \nError Message: ' + errMsg );
+					console.log( errMsg );
+				}
+			});
+		}
+
+		// ------------------------------------------------
+		// --- Setup Related ------------------
+
+		me.setup_Events = function()
+		{
+			me.btnSaveTag.click( function()
+			{					
+				Util.trimTags( me.tbAwardTag.find( 'input,textarea') );	
+
+				AppUtil.checkForMandatory( me.tbAwardTag, function()
+				{
+					me.addAwardCOG();
+				});
+			});
+
+
+			me.btnCancelTag.click( function()
+			{
+				me.dialogFormTag.dialog( "close" );
+			});
+
+		}
+
+		me.setup_datePickers = function()
+		{
+			me.dialogFormTag.find( '.datepicker' ).datepicker( 
+			{ 
+				dateFormat: "yy-mm-dd"
+				,changeMonth: true
+				,changeYear: true
+			} );
+		}
+
+		// --------------------------
+		// Run methods ---
+
+		// Initial Run Call
+		me.initialSetup();
+	}
+
+
+	// -------------------------------------
+	// -- Static Classes - App Util
+
+	function AppUtil() {}
+
+	AppUtil.setStatus = function( tag, status, title )
+	{
+		if ( tag && tag.length > 0 )
+		{
+			if ( status == "Ok" )
+			{
+				tag.attr( 'src', 'img/statusGood.png' ).attr( 'title', title );
+			}
+			else if ( status == "Wrong" )
+			{
+				tag.attr( 'src', 'img/statusFail.png' ).attr( 'title', title );
+			}
+			else if ( status == "Warning" )
+			{
+				tag.attr( 'src', 'img/statusWarning.png' ).attr( 'title', title );
+			}
+			else if ( status == "Problematic" )
+			{
+				tag.attr( 'src', 'img/statusWarning2.png' ).attr( 'title', title );
+			}
+		}
+	}
+
+
+	// Need to get group info <-- to check if the group belongs to Award...
+	AppUtil.getMatchingData = function( list_from, list_to )
+	{
+		var foundItem;
+
+		if ( list_from !== undefined && list_to !== undefined )
+		{
+			// select one if exists in awards
+			$.each( list_from, function( i_cog, item_cog )
+			{
+				$.each( list_to, function( i_awd, item_awd )
+				{
+					if ( item_cog.id == item_awd.id )
+					{
+						foundItem = item_awd;
+						return false;
+					}
+				});
+
+				if ( foundItem !== undefined ) return false;
+			});
+		}
+
+		return foundItem;
+	}
+
+
+	AppUtil.getAttributeValue_ById = function( attributeValues, attributeId )
+	{
+		var value = "";
+
+		if ( attributeValues !== undefined )
+		{
+			$.each( attributeValues, function( i_av, item_av )
+			{
+				if ( item_av.attribute.id == attributeId )
+				{
+					value = ( item_av.value !== undefined ) ? item_av.value : "";
+					return false;
+				}
+			});
+		}
+
+		return value;
+	}
+
+
+	AppUtil.getAccessInfoFromCatOption = function( json_catOption )
+	{
+		var accessData = { "privateAccess": false, "accessRW": false, "accessDataEntry": false, "dataEntryMatchCount": 0, "rwMatchCount": 0 };
+		var userGroupNames = { "rw": [], "dataEntry": [] };
+
+		// Check catOption's public/private access
+		accessData.privateAccess = ( json_catOption.publicAccess == "--------" );
+
+		$.each( json_catOption.userGroupAccesses, function( i_acc, item_acc )
+		{
+			// If 'rw' with not same named userGroupAccess exists, 
+			// Check for JHPEIGOAdmin user Group and mark it.
+			if ( AppUtil.checkAccessRW( item_acc.access ) && json_catOption.name != item_acc.displayName )
+			{
+				userGroupNames.rw.push( item_acc );
+
+				if ( item_acc.id == _userGroupId_JHPIEGOAdmin )
+				{
+					accessData.accessRW = true;
+					accessData.rwMatchCount++;
+				}
+			}
+
+			// If 'rw' with same named userGroupAccess exists, add to 'Data Entry'.
+			if ( AppUtil.checkAccessRW( item_acc.access ) && json_catOption.name == item_acc.displayName )
+			{
+				userGroupNames.dataEntry.push( item_acc );
+				accessData.accessDataEntry = true;
+				accessData.dataEntryMatchCount++;
+			}
+		});
+
+		return { "accessData": accessData, "userGroupNames": userGroupNames };
+	}
+
+
+	AppUtil.getStatusInfo = function( catOptionData, accessData, json_AwardData )
+	{
+		var statusInfo = { "awardSts": false, "dataEntrySts": false, "analyticsSts": false, "privateSts": false, "renderingJson": { "status": true, "msg": "" }, "awardInfo": undefined, "dataEntryMatchCount": accessData.dataEntryMatchCount, "rwMatchCount": accessData.rwMatchCount, "OuLinkCount": 0 };
+
+		// Awards
+		var foundAward = AppUtil.getMatchingData( catOptionData.categoryOptionGroups, json_AwardData.categoryOptionGroups );
+		if ( foundAward !== undefined ) 
+		{
+			statusInfo.awardSts = true;
+			statusInfo.awardInfo = foundAward;
+		}
+
+
+		// Data Entry
+		statusInfo.dataEntrySts = accessData.accessDataEntry;
+		
+		
+		// Analytics
+		var catOptionGroup_SameNamed = Util.getFromList( catOptionData.categoryOptionGroups, catOptionData.name, "name" );
+
+		statusInfo.analyticsSts = ( catOptionGroup_SameNamed !== undefined 
+			&& catOptionGroup_SameNamed.categoryOptions.length == 1 
+			&& catOptionGroup_SameNamed.categoryOptionGroupSet !== undefined 
+			&& catOptionGroup_SameNamed.categoryOptionGroupSet.id == _catOptionGroupSet_Program );
+		
+
+		// Optional - Also see how many has similar catOptions..
+		var catOptionGroupMatch = { "count": 0, "str": "" };
+		var catOption_first7Str = catOptionData.name.substring( 0, 7 );
+		$.each( catOptionData.categoryOptionGroups, function( i_cog, item_cog )
+		{
+			if ( item_cog.name.substring( 0, 7 ) == catOption_first7Str )
+			{
+				catOptionGroupMatch.count++;
+				catOptionGroupMatch.str += "'" + item_cog.name + "' ";
+			}
+		});
+
+		statusInfo.catOptionGroupMatch = catOptionGroupMatch;
+
+
+		// Private
+		statusInfo.privateSts = ( accessData.privateAccess && accessData.accessRW );
+
+
+		// Try to get Rendering JSON data filled for each 'JPI'/'MCSP' activation
+		AppUtil.checkRenderingJSONStatus( catOptionData.attributeValues, statusInfo.renderingJson );
+
+
+		// OrgUnit link exists
+		statusInfo.OuLinkCount = catOptionData.organisationUnits.length;
+
+		return statusInfo;
+	}
+
+
+	AppUtil.checkRenderingJSONStatus = function( attributeValues, renderingJson )
+	{
+
+		// If JPI is set to true
+		var JPI_Set = AppUtil.getAttributeValue_ById( attributeValues, _attributeId_JPI );
+		var MCSP_Set = AppUtil.getAttributeValue_ById( attributeValues, _attributeId_MCSP );
+		
+
+		var JPI_JsonQuarterly = AppUtil.getAttributeValue_ById( attributeValues, _attributeId_JPI_JsonQuarterly );
+		var JPI_JsonAnnually = AppUtil.getAttributeValue_ById( attributeValues, _attributeId_JPI_JsonAnnually );
+		var MCSP_JsonQuarterly = AppUtil.getAttributeValue_ById( attributeValues, _attributeId_MCSP_JsonQuarterly );
+		var MCSP_JsonAnnually = AppUtil.getAttributeValue_ById( attributeValues, _attributeId_MCSP_JsonAnnually );
+
+
+		if ( JPI_Set == "true" )
+		{
+			// If both of them are empty, return false;
+			if ( Util.trim( JPI_JsonQuarterly ) == "" )
+			//&& Util.trim( JPI_JsonAnnually ) == "" ) )
+			{
+				renderingJson.status = false;
+
+				renderingJson.msg += "JPI is enabled, but 'JPI Quarterly' rendering JSON is emtpy. ";
+				// "but both 'JPI Quarterly' and 'JPI Annual' rendering JSON are emtpy. ";
+			}
+		}
+
+		if ( MCSP_Set == "true" )
+		{
+			// If both of them are empty, return false;
+			if ( Util.trim( MCSP_JsonQuarterly ) == "" )
+			//&& Util.trim( MCSP_JsonAnnually ) == "" ) )
+			{
+				renderingJson.status = false;
+
+				renderingJson.msg += "MCSP is enabled, but 'MCSP Quarterly' rendering JSON is emtpy. ";
+				// but both 'MCSP Quarterly' and 'MCSP Annual' rendering JSON are emtpy. ";
+			}
+		}
+
+	}
+	
+
+	AppUtil.populateStatus = function( rowTag, statusInfo, isListing )
+	{
+		var needFix = false;
+		var problematic = false;
+		var wrongCombinedMsg = '';
+
+		var status_AwardTag = rowTag.find( 'img.status_Award' );
+		var status_DataEntryTag = rowTag.find( 'img.status_DataEntry' );
+		var status_AnalyticsTag = rowTag.find( 'img.status_Analytics' );
+		var status_PrivateTag = rowTag.find( 'img.status_Private' );
+		var status_SharingSettingTag = rowTag.find( 'img.status_SharingSetting' );
+		var status_JsonDataMissingTag = rowTag.find( 'img.status_JsonDataMissing' );
+		var status_OrgUnitLinkedTag = rowTag.find( 'img.status_OrgUnitLinked' );
+		var awardNameTag = rowTag.find( 'span.awardName' );
+
+
+		// Awards
+		( statusInfo.awardSts ) ? AppUtil.setStatus( status_AwardTag, 'Ok', 'Program associated to Award' ) : AppUtil.setStatus( status_AwardTag, 'Wrong', 'Program missing Award association (CatOption Group)' );
+
+		if ( statusInfo.awardInfo !== undefined )
+		{
+			awardNameTag.text( '[' + Util.getNotEmpty( statusInfo.awardInfo.code ) + '] ' + Util.getNotEmpty( statusInfo.awardInfo.shortName ) );
+		}
+
+
+		// Data Entry
+		if ( statusInfo.dataEntrySts ) 
+		{
+			AppUtil.setStatus( status_DataEntryTag, 'Ok', 'Shared ONLY ONCE with corresponding group' );
+		}
+		else
+		{
+			AppUtil.setStatus( status_DataEntryTag, 'Wrong', 'Not shared with expected user group' );
+			wrongCombinedMsg += "DataEntry, ";
+		}
+
+		// Analytics
+		if ( statusInfo.analyticsSts ) 
+		{
+			AppUtil.setStatus( status_AnalyticsTag, 'Ok', 'Program will show in analytics' );
+		}
+		else
+		{
+			AppUtil.setStatus( status_AnalyticsTag, 'Wrong', 'Program missing CatOption Group for analytics (open and save to fix)' );
+			wrongCombinedMsg += "Analytics, ";
+		}
+
+		// Private
+		if ( statusInfo.privateSts )
+		{
+			AppUtil.setStatus( status_PrivateTag, 'Ok', 'Public sharing set to none. Editable by "JHPIEGO admin" user group.' );
+		}
+		else
+		{
+			AppUtil.setStatus( status_PrivateTag, 'Wrong', 'Public sharing is not "none". Sharing with "JHPIEGO admin" user group missing. Open to fix..' );
+			wrongCombinedMsg += "Private, ";
+		}
+
+
+		// JsonDataMissing
+		if ( statusInfo.renderingJson.status )
+		{
+			AppUtil.setStatus( status_JsonDataMissingTag, 'Ok', 'Configured' );
+		}
+		else
+		{
+			AppUtil.setStatus( status_JsonDataMissingTag, 'Wrong', statusInfo.renderingJson.msg );
+		}
+
+		// OrgUnit Link exists
+		if ( statusInfo.OuLinkCount > 0 )
+		{
+			AppUtil.setStatus( status_OrgUnitLinkedTag, 'Ok', 'OrgUnit Link Exist: ' + statusInfo.OuLinkCount );
+		}
+		else 
+		{
+			AppUtil.setStatus( status_OrgUnitLinkedTag, 'Wrong', 'No OrgUnit Links' );
+		}
+
+
+		if ( !statusInfo.dataEntrySts || !statusInfo.analyticsSts || !statusInfo.privateSts )
+		{
+			needFix = true;
+
+			wrongCombinedMsg = wrongCombinedMsg.slice( 0, -2 ) + ' Status are not OK. (open and save to fix)';
+
+			AppUtil.setStatus( status_SharingSettingTag, 'Wrong', wrongCombinedMsg );
+		}
+		else
+		{
+			AppUtil.setStatus( status_SharingSettingTag, 'Ok', 'DataEntry, Analytics, Private Status are OK.' );
+		}
+
+
+		// SINCE We have merged 3 into one, if there is warning case
+		// We need to show it (change it) on the merged one.
+		var duplicateCountMsg = "";
+		var duplicateCountType = "";
+
+
+		// Manual Fix cases - Override the 'needFix'.
+		if ( statusInfo.dataEntrySts && statusInfo.dataEntryMatchCount >= 2 )
+		{
+			if ( statusInfo.dataEntryMatchCount <= 200 )
+			{
+				AppUtil.setStatus( status_DataEntryTag, 'Warning', 'Shared MORE THAN ONCE with corresponding group found: ' + parseInt( statusInfo.dataEntryMatchCount / 2 ) );
+
+				duplicateCountType = 'Warning';
+
+				duplicateCountMsg += 'DataEntry duplicate sharing found: ' + parseInt( statusInfo.dataEntryMatchCount / 2 ) + ', ';
+			}
+			else
+			{
+				needFix = false;
+
+				AppUtil.setStatus( status_DataEntryTag, 'Problematic', 'Shared MORE THAN ONCE with corresponding group found: ' + parseInt( statusInfo.dataEntryMatchCount / 2 ) + ' - Need to get fixed by sql statement.' );
+
+				duplicateCountType = 'Problematic';
+
+				duplicateCountMsg += 'DataEntry duplicate sharing found: ' + parseInt( statusInfo.dataEntryMatchCount / 2 ) + ' - Need to get fixed by sql statement.';
+			}
+		}
+
+		if ( statusInfo.privateSts && statusInfo.rwMatchCount >= 2 ) 
+		{
+			if ( statusInfo.rwMatchCount <= 200 )
+			{
+				AppUtil.setStatus( status_PrivateTag, 'Warning', 'Sharing with MORE THAN ONCE with "JHPEIGO admin" user group found: ' + parseInt( statusInfo.rwMatchCount / 2 ) );
+
+				duplicateCountType = ( duplicateCountType == 'Problematic' ) ? duplicateCountType : 'Warning';
+
+				duplicateCountMsg += '"JHPEIGO admin" user group duplicate sharing found: ' + parseInt( statusInfo.rwMatchCount / 2 ) + ', ';
+			}
+			else
+			{
+				needFix = false;
+
+				AppUtil.setStatus( status_PrivateTag, 'Problematic', 'Sharing with MORE THAN ONCE with "JHPEIGO admin" user group found: ' + parseInt( statusInfo.rwMatchCount / 2 ) + ' - Need to get fixed by sql statement.' );
+
+				duplicateCountType = 'Problematic';
+				
+				duplicateCountMsg += '"JHPEIGO admin" user group duplicate sharing found: ' + parseInt( statusInfo.rwMatchCount / 2 ) + ', ';
+			}
+		}
+
+
+		// IF duplicate count message exists, set up in 'SharingSetting' tag
+		if ( duplicateCountMsg != "" )
+		{
+			AppUtil.setStatus( status_SharingSettingTag, duplicateCountType, duplicateCountMsg.slice( 0, -2 ) );
+		}
+
+
+		return needFix;
+	}
+
+
+	AppUtil.checkPropertyValueMatch = function( source, target, property )
+	{
+		return ( source[ property ] !== undefined && target[ property ] !== undefined && source[ property ] == target[ property ] ) 
+	}
+
+	AppUtil.populateSelect = function( selectObj, selectName, json_Data, option )
+	{
+		if ( option === undefined ) option = { "value": "id", "text": "name" };
+		
+		selectObj.empty();
+
+		selectObj.append( '<option value="">Select ' + selectName + '</option>' );
+
+		if ( json_Data !== undefined )
+		{
+			$.each( json_Data, function( i, item ) {
+
+				selectObj.append( $( '<option></option>' ).attr( "value", item[ option.value ] ).text( item[ option.text ] ) );
+			});
+		}
+	}
+
+	AppUtil.getSqlViewData_UserGroupTableId = function( uid, returnFunc )
+	{
+		var sqlViewId_UserGroupTableId = 'A99fLzofYzu';
+
+		var queryURL = _queryURL_api + 'sqlViews/' + sqlViewId_UserGroupTableId + '/data.json?var=uid:' + uid;
+
+		$.get( queryURL, function( json_Data )
+		{
+			if ( json_Data.rows !== undefined && json_Data.rows.length > 0 )
+			{					
+				returnFunc( json_Data.rows[0][0] );
+			}
+		});
+	}
+	
+
+	AppUtil.retrieveUserInfo = function( runFunc )
+	{
+		RESTUtil.retrieveManager.retrieveData( _queryURL_me + '.json?fields=*,userCredentials[*]'
+		, function( json_data ) 
+		{
+			if ( runFunc !== undefined ) runFunc( json_data );
+		});			
+	}
+
+
+	AppUtil.checkUserRole = function( roleId, runFunc )
+	{
+		AppUtil.retrieveUserInfo( function( json_Data )
+		{
+			var userRoles = json_Data.userCredentials.userRoles;
+
+			if ( userRoles !== undefined )
+			{
+				var found = false;
+
+				$.each( userRoles, function( i_ur, item_ur )
+				{
+					if ( item_ur.id == roleId )
+					{
+						found = true;
+						return false;
+					}
+				});
+
+				runFunc( found );
+			}			
+		});
+	}
+
+	/*
+	AppUtil.getUniqueShortName = function( shortName, maxLength )
+	{
+		var currDate = new Date();
+		var shortNameReturn = "";
+
+		if ( shortName.length > maxLength )
+		{
+			var frontStr = shortName.substring( 0, 10 );
+
+			var endStr = shortName.substring( shortName.length - 11 );
+
+			var dateStr = currDate.getUTCFullYear() + '-' + ( currDate.getUTCMonth() + 1 ) + '-' + currDate.getUTCDate();
+
+			shortNameReturn = frontStr + " - " + endStr + ' ' + dateStr;
+		}
+		else
+		{
+			shortNameReturn = shortName;
+		}
+		
+		return shortNameReturn;
+	}
+	*/
+
+	// ======================================================================
+	// === DHIS Object Add/Update/ etc..
+
+	AppUtil.createCatOptionGroup = function( jsonCatOptionGroupData, returnFunc )
+	{
+		var queryUrl = _queryURL_api + 'categoryOptionGroups';
+
+		RESTUtil.submitPostAsyn( "POST", jsonCatOptionGroupData, queryUrl
+		, function( returnJson ) 
+		{ 
+			var importResult = AppUtil.checkAndGet_ImportMessage( returnJson );
+
+			if ( importResult.success )
+			{
+				jsonCatOptionGroupData.id = importResult.id;
+
+				console.log( 'Successfully created catOptionGroup "' + jsonCatOptionGroupData.name + '"' );
+
+				returnFunc( jsonCatOptionGroupData );
+			}
+			else
+			{
+				alert( 'Failed to create catOptionGroup, "' + jsonCatOptionGroupData.name + '"' );
+				
+				returnFunc( undefined, importResult.conflictMsg );
+				// Display error message from 'importResult'
+			}
+		}
+		, function( err )
+		{
+			alert( 'Failed to create catOptionGroup, "' + jsonCatOptionGroupData.name + '"' );
+			console.log( 'Failed to create catOptionGroup, "' + jsonCatOptionGroupData.name + '"' );
+			console.log( err );
+
+			var errMsg = "";
+			if ( err !== undefined )
+			{
+				errMsg = ( typeof( err ) === "object" ) ? JSON.stringify( err ): err;
+			}
+
+			returnFunc( undefined, errMsg);
+			// Display error message from 'err'
+		});		
+	}
+
+	AppUtil.addCatOptionGrpToGrpSet = function( catOptionGroupSetId, catOptionGroupId, returnSuccessFunc, returnFailedFunc, loadingStart, loadingEnd )
+	{
+		var queryUrl = _queryURL_api + 'categoryOptionGroupSets/' + catOptionGroupSetId + '/categoryOptionGroups/' + catOptionGroupId;
+
+		RESTUtil.submitPostAsyn( "POST", new Object(), queryUrl
+		, returnSuccessFunc
+		, returnFailedFunc
+		, loadingStart
+		, loadingEnd
+		);			
+	}
+
+	// -----------------------------------------------------
+
+	AppUtil.checkAndGet_ImportMessage = function( returnJson )
+	{
+		var success = false;
+		var id = "";
+		var conflictMsg = "";
+		var pass_225 = false;
+		var pass_226 = false;
+
+
+		if ( returnJson.response !== undefined 
+			&& returnJson.response.status == "SUCCESS" 
+			&& returnJson.response.lastImported !== undefined ) {
+				// DHIS 2.25 and below
+				success = true;
+				id = returnJson.response.lastImported;
+		} else if ( returnJson.httpStatus === "Created" 
+			&& returnJson.status === "OK"
+			&& returnJson.response !== undefined 
+			&& returnJson.response.uid !== undefined ) {
+				// DHIS 2.26
+				success = true;
+				id = returnJson.response.uid;		
+		}
+		else
+		{
+			var conflictMsg = AppUtil.checkAndHandleConflicts( returnJson );
+		}
+
+		return { "success": success, "id": id, "conflictMsg": conflictMsg };
+	}
+
+	AppUtil.checkForMandatory = function( tableTag, execFunc )
+	{
+		var hasWarning = false;
+
+		tableTag.find( '.mandatoryData' ).each( function()
+		{
+			var inputTag = $( this );
+
+			if( Util.trim( inputTag.val() ) == "" )
+			{
+				Util.paintWarning( inputTag );					
+				hasWarning = true;
+			}
+			else
+			{
+				Util.paintClear( inputTag );
+			}
+		});
+
+		if ( hasWarning )
+		{
+			alert( 'Please fill all the mandatory fields.' );
+		}
+		else
+		{
+			execFunc();
+		}
+	}
+
+
+	AppUtil.checkAndHandleConflicts = function( returnJson )
+	{
+		var conflictsStr = "";
+
+		if ( returnJson.response.importConflicts !== undefined && returnJson.response.importConflicts.length > 0 )
+		{
+			$.each( returnJson.response.importConflicts, function( i_cf, item_cf )
+			{
+				if ( i_cf > 0 ) conflictsStr += '\n';
+
+				var newConflictStr = "";
+
+				if ( typeof( item_cf ) === "object" ) {
+					// Due to the 'already exists' duplicate message does not point which attribute(property) has duplicates,
+					// we are changing the message.
+					newConflictStr = ( item_cf.value === "Object already exists." ) ? "Name, ShortName, or Code already exists." : JSON.stringify( item_cf );
+				} else {
+					newConflictStr = item_cf;
+				}
+
+				conflictsStr += newConflictStr;
+			});
+		}
+
+		return conflictsStr;
+	}
+
+
+	AppUtil.checkAccessR = function( accessStr )
+	{
+		return ( accessStr.length > 1 && accessStr.substring( 0, 1 ) === 'r' );
+	}
+
+	AppUtil.checkAccessRW = function( accessStr )
+	{
+		return ( accessStr.length > 2 && accessStr.substring( 0, 2 ) === 'rw' );
+	}
+
+	AppUtil.checkAccessDataRead = function()
+	{
+		return ( accessStr.length > 3 && accessStr.substring( 2, 3 ) === 'r' );
+	}
+
+	AppUtil.getAccessChanged_Data = function( accessStr )
+	{
+		if ( accessStr.length > 4 )
+		{
+			accessStr = accessStr.substring( 0, 2 ) + 'rw' + accessStr.substring( 4 );
+		}
+
+		return accessStr;
+	}
+
+	// -- Static Classes - App Util
+	// -------------------------------------
+
+
+	// -------------------------------------
+	// -- Static Classes - Message Manager Class
+
+	function FormBlock() {}
+
+	FormBlock.block = function( block, msg, cssSetting, tag )
+	{
+		var msgAndStyle = { message: msg, css: cssSetting };
+
+		if ( tag === undefined )
+		{
+			if ( block ) $.blockUI( msgAndStyle );
+			else $.unblockUI();
+		}
+		else
+		{
+			if ( block ) tag.block( msgAndStyle );
+			else tag.unblock();
+		}
+	}
+
+
+	function MsgManager() {}
+
+	// --- App block/unblock ---
+	MsgManager.cssBlock_Body = { 
+		border: 'none'
+		,padding: '15px'
+		,backgroundColor: '#000'
+		,'-webkit-border-radius': '10px'
+		,'-moz-border-radius': '10px'
+		,opacity: .5
+		,color: '#fff'
+		,width: '200px'
+	};
+
+
+	MsgManager.appBlock = function( msg, tag )
+	{
+		if ( !Util.checkValue( msg ) ) msg = "Processing..";
+
+		FormBlock.block( true, msg, MsgManager.cssBlock_Body, tag );
+	}
+
+	MsgManager.appUnblock = function( tag )
+	{
+		FormBlock.block( false, undefined, undefined, tag );
+	}
+
+
+	// --- Messaging ---
+	MsgManager.divMsgAreaTag;
+	MsgManager.spanMsgAreaCloseTag;
+	MsgManager.btnMsgAreaCloseTag;
+	MsgManager.spanMsgAreaTextTag;
+
+	MsgManager.initialSetup = function()
+	{
+		MsgManager.divMsgAreaTag = $( '#divMsgArea' );
+		MsgManager.spanMsgAreaCloseTag = $( '#spanMsgAreaClose' );
+		MsgManager.btnMsgAreaCloseTag = $( '#btnMsgAreaClose' );
+		MsgManager.spanMsgAreaTextTag = $( '#spanMsgAreaText' );
+			
+
+		MsgManager.btnMsgAreaCloseTag.click( function()
+		{
+			MsgManager.divMsgAreaTag.hide( 'fast' );
+		});
+	}
+
+	MsgManager.msgAreaShow = function( msg )
+	{
+		MsgManager.divMsgAreaTag.hide( 'fast' );
+		MsgManager.spanMsgAreaTextTag.text( '' );
+
+		MsgManager.spanMsgAreaTextTag.text( msg );
+		MsgManager.divMsgAreaTag.show( 'medium' );
+
+		console.log( ' -- Msg: ' + msg );
+	}
+
+
+	// -- End of Message Manager Class
+	// -------------------------------------
+
+</script>
+
+</head>
+
+<body>
+
+	<div id="header">
+		<img id="headerBanner" src="img/logo_banner.png" style="cursor:pointer" title="View home page">
+		<span id="headerText" style="cursor:pointer" title="View home page"></span>
+		<div id="headerRightSideControls">
+
+			<a href="https://docs.google.com/document/d/1dSN1I5ypE5aElqudeJQx-1goSfrO8fJYTyfH0BqKDJ0" target="_blank" style="color: White;" title="App version number (Click for version detail page)">v <span id="currentVersion">1.38</span></a>
+				| <button type="button" id="closeButton"><span nameId='closeButton' title="Close this app and go back to home page.">Close</span></button>
+		</div>
+	</div>
+
+	<div id="divMsgArea" style="display: none;">
+		<span id="spanMsgAreaClose"><img src="img/hide.png" title="Close" id="btnMsgAreaClose"></span>
+		<span id="spanMsgAreaText"></span>
+	</div>
+
+	<div id="divMain" style="display: block;margin-top: 40px; margin-right: 10px;">		
+
+	<table class="tbNone">
+	  <tr>
+		<td>
+			<table width="100%">
+			<tr>
+			<td>
+				<table>
+				  <tr>
+				    <td>
+						<div id="divAddNewCatOption" style="display: none;">
+							<button id="btnAddNewCatOption" type="button" title="Add new Category Option Program" style=" margin-right: 6px;">Add New Program</button>
+						</div>
+					</td>
+				    <td>
+						<button id="btnAddAward" type="button" title="Add new Award type Category Option Group">Add Award</button>
+						<a href="../../../dhis-web-maintenance/#/edit/dataElementSection/categoryOptionGroup/add" id="hiddenLinkAddAward" target="_blank"></a>
+					</td>
+					<td>
+						&nbsp;<input id="cbShowActiveOnly" type="checkbox" title="Only display 'Active' programs" />Show Active Only
+					</td>
+
+					<td>
+						<div style="margin-left: 15px;">
+							<table>
+							<tr>
+								<td>
+									<button id="massFixBtn" type="button" title="Check and fix the setup of all programs on userGroup/catOptionGroup/catOptionGroupSet">Mass Fix</button>
+								</td>
+								<td>								
+									<div id="massFixCountDiv" style="display:none; margin-left: 13px; font-weight: bold; color: #555;">
+										<span id="massFixCount"></span> / 
+										<span id="massFixCount_Total"></span>
+									</div>
+								</td>
+							</tr>
+							</table>
+						</div>
+					</td>
+
+				  </tr>
+				</table>
+			</td>
+			<td align="right">
+				Search: <input type="text" id="searchTextBox" size="25" title="Search program by name" /> <span id="searchResult" title="# of Search Found" style="color: Gray;"></span>
+			</td>
+			</tr>
+			</table>
+
+		</td>
+	  </tr>
+	  <tr>
+		<td style="padding: 0px; border-spacing: 0px;">
+			<div id="divListingTable">
+
+				<table style="padding: 0px; border-spacing: 0px; margin-top: 7px;" id="listingTable" class="listTable_style2 tablesorter">
+				  <thead>
+					<tr class="trHeader">
+						<th>Program</th>
+						<th>Country</th>
+						<th align="left">Start Date</th>
+						<th align="left">End Date</th>
+						<th align="left">Status</th>
+						<th align="center" nowrap>Data Entry Form Configured</th>
+						<th align="center" nowrap>OrgUnit</th>
+						<th align="center" nowrap>Award <span title="Award catOptionGroups are loaded once when app starts and reused there after.  Please refresh this app if there is a change in Award list." style="font-weight: normal;">*</span></th>
+						<th align="center" nowrap>Program Shared</th>
+					</tr>
+				  </thead>
+				  <tbody>
+				  </tbody>
+				</table>
+
+			</div>
+		</td>
+	  </tr>
+	  <tr>
+		<td align="right">
+			<div>
+				<span style="color:#336;">Current User: </span><span id="userInfo_currentUser"></span><br>
+				<span style="color:#336;">Program Administrator Role: </span><span id="userInfo_role_ProgramAdmin"></span><br>
+				<span style="color:#336;">M&amp;E Backstop Role: </span><span id="userInfo_role_MNEBackstop"></span><br>
+			</div>
+		</td>
+	  </tr>
+	</table>
+	
+		<div id="divListLoading" style="display:none;">			
+			<img src="img/ajax-loader-circle.gif">
+		</div>
+
+	</div>
+
+
+	<div id="catOptionPopupForm" class="ui-widget" formWidth="620" formHeight="700" style="margin:0;padding:0;display:none;">
+
+		<div id="catOptionPopupFormInner" style="margin: 5px;">
+
+			<table class="tbStyle tbCatOptionDetail" width="100%" style="margin-top: 4px;">
+				<tr>
+					<td style="vertical-align:top; width:450px;">
+						
+						<table class="tbStyle" style="margin-top: 4px; margin-bottom: 6px; width:440px;">
+							<tr>
+								<td class="tbStyleTitle" style="width:100px; white-space: nowrap;">Name<span title='mandatory' class='mandatory'>*</span></td>
+								<td colspan="3" class="tbStyleData" style="width:325px;">
+									<textarea class="catOption_Name mandatoryData" rows="2" cols="45" maxlength="150"></textarea>
+								</td>
+							</tr>
+							<tr>
+								<td class="tbStyleTitle" style="white-space: nowrap;">Short Name<span title='mandatory' class='mandatory'>*</span></td>
+								<td colspan="3" class="tbStyleData">
+									<input class="catOption_ShortName mandatoryData" type="text" style="width: 320px;" maxlength="50" />
+								</td>
+							</tr>
+							<tr>
+								<td class="tbStyleTitle" style="width:100px;">Start Date</td>
+								<td class="tbStyleData" style="width:120px;">
+									<input class="catOption_StartDate datepicker" type="text" style="width: 110px;" />
+								</td>
+								<td class="tbStyleTitle" style="width:80px;">End Date</td>
+								<td class="tbStyleData" style="width:120px;">
+									<input class="catOption_EndDate datepicker" type="text" style="width: 110px;" />
+								</td>
+							</tr>
+							<tr>
+								<td class="tbStyleTitle">Code</td>
+								<td class="tbStyleData" colspan="3">
+									<input class="catOption_Code" type="text" style="width: 200px;" />
+								</td>
+							</tr>
+							<tr>
+								<td class="tbStyleTitle">Award</td>
+								<td class="tbStyleData" colspan="3">
+									<table class="tbNone" >
+									<tr>
+										<td>
+											<select class="catOption_Award"></select>
+											<span class="awardFullName" style="display: none; font-size: 11px;"></span>
+											<div id='award_loading' style='display:none; margin-left: 10px;'>
+												<img src='img/ui-anim_basic.gif'/> loading..
+											</div>
+										</td>
+									</tr>
+									</table>
+
+								</td>
+							</tr>
+							<tr>
+								<td class="tbStyleTitle">Notes</td>
+								<td colspan="3" class="tbStyleData">
+									<textarea class="catOption_Notes" rows="3" cols="45" ></textarea>
+								</td>
+							</tr>
+						</table>
+
+					</td>
+					<td style="vertical-align:top; width:155px;">
+						
+						<table class="tbStyle" width="120" align="center" style="margin-top: 4px;">
+							<tr>
+								<td class="tbStyleTitle">Award</td>
+								<td class="tbStyleData" align="center"><img src="img/statusFail.png" alt="" title="" class="status_Award" /></td>
+							</tr>
+							<tr>
+								<td class="tbStyleTitle" width="80">Data Entry</td>
+								<td width="40" class="tbStyleData" align="center"><img src="img/statusFail.png" alt="" title="" class="status_DataEntry" /></td>
+							</tr>
+							<tr>
+								<td class="tbStyleTitle">Analytics</td>
+								<td class="tbStyleData" align="center"><img src="img/statusFail.png" alt="" title="" class="status_Analytics" /></td>
+							</tr>
+							<tr>
+								<td class="tbStyleTitle">Private</td>
+								<td class="tbStyleData" align="center"><img src="img/statusFail.png" alt="" title="" class="status_Private" /></td>
+							</tr>
+							<tr>
+								<td class="tbStyleTitle">Data Entry Form Configured</td>
+								<td class="tbStyleData" align="center"><img src="img/statusFail.png" alt="" title="" class="status_JsonDataMissing" /></td>
+							</tr>
+							<tr>
+								<td class="tbStyleTitle">OrgUnit Links</td>
+								<td class="tbStyleData" align="center"><img src="img/statusFail.png" alt="" title="" class="status_OrgUnitLinked" /></td>
+							</tr>
+						</table>
+					</td>
+				</tr>
+				<tr>
+					<td colspan="2">
+
+						<div id="catOptionTabs" style="margin-left: 3px;" >							
+							<ul>
+								<li class="tabLi"><a class="tabAnchor" href="#coTab1">Properties</a></li>
+								<li class="tabLi"><a class="tabAnchor" href="#coTab2">JPI TAs</a></li>
+								<li class="tabLi"><a class="tabAnchor" href="#coTab3">Sharing</a></li>
+							</ul>
+
+							<div id="coTab1" class="tab">
+
+								<table class="tbStyle2 tbAttributesPRG" width="100%">
+								  <thead>
+								    <tr>
+									  <th></th>
+									  <th>JPI</th>
+									  <th>MCSP</th>
+									</tr>
+								  </thead>
+								  <tbody>
+								    <tr>
+									  <td><span style="font-weight: bold;">Activation</span></td>
+									  <td attrid="dDuwpIhuitF">
+									  </td>
+									  <td attrid="ppvDJ5KeuzN">
+									  </td>
+									</tr>
+									
+								    <tr>
+									  <td><span style="font-weight: bold;">OrgUnit Association</span></td>
+									  <td colspan="2">
+										<div id="orgUnitTreeContainer">
+											<div id="selectionTree" style="width:380px;"></div>
+										</div>
+									  </td>
+									</tr>
+								  </tbody>
+								</table>
+
+							</div>
+
+							<div id="coTab2" class="tab">
+								<table class="tbStyle tbAttributes" attrType="JPI" width="100%">
+								</table>
+							</div>
+							
+							<div id="coTab3" class="tab">
+
+								<table class="tbStyle" width="95%">
+									<tr>
+										<td class="tbStyleData" width="50%"><b>Public: </b><span class="accessPublic"></span></td>
+										<td class="tbStyleData" width="50%">
+											<img src="img/statusFail.png" alt="" title="" class="accessPublic_Status" style="margin-left: 4px;" />
+										</td>
+									</tr>
+									<tr>
+										<td class="tbStyleData"><b>R/W: </b><span class="accessUserGroups_RW"></span></td>
+										<td class="tbStyleData">
+											<img src="img/statusFail.png" alt="" title="" class="accessUserGroups_RW_Status" style="margin-left: 4px;" />
+										</td>
+									</tr>
+									<tr>
+										<td class="tbStyleData"><b>Data Entry: </b><span class="accessUserGroups_DataEntry"></span></td>
+										<td class="tbStyleData">
+											<img src="img/statusFail.png" alt="" title="" class="accessUserGroups_DataEntry_Status" style="margin-left: 4px;" />
+										</td>
+									</tr>
+								</table>
+
+							</div>
+						</div>
+
+					</td>
+				</tr>
+			</table>
+									
+			<div style="margin-top: 12px; margin-bottom: 10px; text-align:center;">
+				<span id="duplicateAttrValCase" style="display: none; color:#CCC;" title="Found duplicate attribute value case">*</span>
+				<button class="btnSave popupBtn" type="button" style="display: none; margin-right: 13px;">Save</button>
+				<button class="btnCancel popupBtn" type="button" >Cancel</button>
+			</div>
+					
+		</div>
+	</div>
+
+
+	<div id="awardPopupForm" class="ui-widget" formWidth="500" formHeight="400" style="margin:0; padding:0; display:none;">
+
+		<div id="divAwardPopupFormInner" style="margin: 5px;">
+
+			<table class="tbStyle tbAward" width="100%" style="margin-top: 4px;">
+				<tr>
+					<td class="tbStyleTitle" style="width:100px; white-space: nowrap;">Name<span title='mandatory' class='mandatory'>*</span></td>
+					<td class="tbStyleData" style="width: 85%;">
+						<textarea id="award_Name" class="mandatoryData" rows="3" cols="47" maxlength="150"></textarea>
+					</td>
+				</tr>				
+				<tr>
+					<td class="tbStyleTitle" style="white-space: nowrap;">Short Name<span title='mandatory' class='mandatory'>*</span></td>
+					<td class="tbStyleData">
+						<input id="award_ShortName" class="mandatoryData" type="text" style="width: 320px;" maxlength="50" />
+					</td>
+				</tr>
+				<tr>
+					<td class="tbStyleTitle" style="white-space: nowrap;">Code</td>
+					<td class="tbStyleData">
+						<input id="award_Code" type="text" style="width: 320px;" maxlength="50" />
+					</td>
+				</tr>
+				<tr>
+					<td class="tbStyleTitle">Start Date</td>
+					<td class="tbStyleData">
+						<input id="award_StartDate" class="datepicker" type="text" style="width: 110px;" />
+					</td>
+				</tr>
+				<tr>
+					<td class="tbStyleTitle">End Date</td>
+					<td class="tbStyleData">
+						<input id="award_EndDate" class="datepicker" type="text" style="width: 110px;" />
+					</td>
+				</tr>
+			</table>
+
+			<div style="margin-top: 12px; margin-bottom: 10px; text-align:center;">
+				<button class="btnSave popupBtn" type="button" style="margin-right: 13px;">Save</button>
+				<button class="btnCancel popupBtn" type="button">Cancel</button>
+			</div>
+			
+		</div>		
+	</div>	
+
+</body>
+
+</html>
