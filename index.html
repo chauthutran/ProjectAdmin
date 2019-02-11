@@ -262,7 +262,7 @@
 		me.massFixCountTag = $( '#massFixCount' );
 		me.massFixCount_TotalTag = $( '#massFixCount_Total' );
 
-		me.queryURL_CatProgram_Retrieve = _queryURL_CatProgram + '.json?paging=false&fields=id,name,categoryOptions[id,name,shortName,organisationUnits[level,name],publicAccess,startDate,endDate,attributeValues[value,attribute[id]],userGroupAccesses[access,id,displayName,userGroupUid],categoryOptionGroups[id,name,categoryOptions[id],categoryOptionGroupSet[id]]]';
+		me.queryURL_CatProgram_Retrieve = _queryURL_CatProgram + '.json?paging=false&fields=id,name,categoryOptions[id,name,shortName,organisationUnits[level,name],publicAccess,startDate,endDate,attributeValues[value,attribute[id]],userGroupAccesses[access,id,displayName,userGroupUid],categoryOptionGroups[id,name,categoryOptions[id],groupSets[id]]]';
 
 		me.catOptionPopupForm;
 		me.awardPopupForm;
@@ -948,7 +948,7 @@
 
 		me.retrieveAndPopulate_DetailTable = function( tableTag, catOptionId, hasUserRole_Award, returnFunc )
 		{
-			var queryUrl = me.queryURL_CatOption + '/' + catOptionId + '.json?fields=*,organisationUnits[id,name,level,ancestors[id,level]],userGroupAccesses[access,id,displayName,userGroupUid],categoryOptionGroups[id,name,categoryOptions[id],categoryOptionGroupSet[id]]';
+			var queryUrl = me.queryURL_CatOption + '/' + catOptionId + '.json?fields=*,organisationUnits[id,name,level,ancestors[id,level]],userGroupAccesses[access,id,displayName,userGroupUid],categoryOptionGroups[id,name,categoryOptions[id],groupSets[id]]';
 			//,attributeValues[value,attribute[id,code,option]]';
 
 			$.get( queryUrl, function( json_Data )
@@ -2741,8 +2741,8 @@
 
 		statusInfo.analyticsSts = ( catOptionGroup_SameNamed !== undefined 
 			&& catOptionGroup_SameNamed.categoryOptions.length == 1 
-			&& catOptionGroup_SameNamed.categoryOptionGroupSet !== undefined 
-			&& catOptionGroup_SameNamed.categoryOptionGroupSet.id == _catOptionGroupSet_Program );
+			&& catOptionGroup_SameNamed.groupSets !== undefined 
+			&& catOptionGroup_SameNamed.groupSets.id == _catOptionGroupSet_Program );
 		
 
 		// Optional - Also see how many has similar catOptions..
