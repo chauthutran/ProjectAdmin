@@ -17,7 +17,7 @@
 
 <link rel="stylesheet" href="css/jQuery/tablesorter.theme.default.css" />
 <link rel="stylesheet" href="css/jQuery/jquery-ui.css" />
-<link rel="stylesheet" href="css/app/style.css">
+<link rel="stylesheet" href="css/app/style.css?v1.40">
 
 
 <!-- URL addresses (Dhis site, home, api) -->
@@ -336,10 +336,12 @@
 			{
 				if ( me.catOptionList_Retrieved !== undefined )
 				{
-					if ( confirm( "Are you sure you want to perform Mass Fix?" ) )
-					{
-						me.performMassFix( me.catOptionList_Retrieved );
-					}
+					alert( 'Mass Fix feature has been disabled for now - due to crashing DHIS2 server with heavy request load.' );
+
+					//if ( confirm( "Are you sure you want to perform Mass Fix?" ) )
+					//{
+					//	me.performMassFix( me.catOptionList_Retrieved );
+					//}
 				}
 				else
 				{
@@ -3330,7 +3332,7 @@
 		<span id="headerText" style="cursor:pointer" title="View home page"></span>
 		<div id="headerRightSideControls">
 
-			<a href="https://docs.google.com/document/d/1dSN1I5ypE5aElqudeJQx-1goSfrO8fJYTyfH0BqKDJ0" target="_blank" style="color: White;" title="App version number (Click for version detail page)">v <span id="currentVersion">1.39</span></a>
+			<a href="https://docs.google.com/document/d/1dSN1I5ypE5aElqudeJQx-1goSfrO8fJYTyfH0BqKDJ0" target="_blank" style="color: White;" title="App version number (Click for version detail page)">v <span id="currentVersion">1.40</span></a>
 				| <button type="button" id="closeButton"><span nameId='closeButton' title="Close this app and go back to home page.">Close</span></button>
 		</div>
 	</div>
@@ -3368,7 +3370,8 @@
 							<table>
 							<tr>
 								<td>
-									<button id="massFixBtn" type="button" title="Check and fix the setup of all projects on userGroup/catOptionGroup/catOptionGroupSet">Mass Fix</button>
+									<button id="massFixBtn" type="button" disabled title="[DISABLED FOR NOW] Check and fix the setup of all projects on userGroup/catOptionGroup/catOptionGroupSet">Mass Fix</button>
+									<!-- Check and fix the setup of all projects on userGroup/catOptionGroup/catOptionGroupSet -->
 								</td>
 								<td>								
 									<div id="massFixCountDiv" style="display:none; margin-left: 13px; font-weight: bold; color: #555;">
