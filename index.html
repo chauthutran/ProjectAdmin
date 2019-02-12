@@ -2742,7 +2742,8 @@
 		statusInfo.analyticsSts = ( catOptionGroup_SameNamed !== undefined 
 			&& catOptionGroup_SameNamed.categoryOptions.length == 1 
 			&& catOptionGroup_SameNamed.groupSets !== undefined 
-			&& catOptionGroup_SameNamed.groupSets.id == _catOptionGroupSet_Program );
+			&& catOptionGroup_SameNamed.groupSets.length == 1
+			&& catOptionGroup_SameNamed.groupSets[0].id == _catOptionGroupSet_Program );
 		
 
 		// Optional - Also see how many has similar catOptions..
